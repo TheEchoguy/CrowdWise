@@ -471,6 +471,7 @@ export class CanvasRenderer {
     // Render density gradient stamps for agents
     for (let i = 0; i < agents.length; i += 2) {
       const a = agents[i];
+      if (a.state === 'ADMITTED' || a.state === 'INSIDE') continue;
       const rad = 4.5;
       const grad = ctx.createRadialGradient(a.x, a.y, 0, a.x, a.y, rad);
       grad.addColorStop(0, 'rgba(239, 68, 68, 0.28)');
@@ -494,6 +495,7 @@ export class CanvasRenderer {
 
     for (let i = 0; i < agents.length; i++) {
       const a = agents[i];
+      if (a.state === 'ADMITTED' || a.state === 'INSIDE') continue;
 
       if (detailLevel === 'SIMPLIFIED' || this.transform.scale < 2.0) {
         // Simplified top-down pedestrian dot
@@ -561,6 +563,7 @@ export class CanvasRenderer {
     // Subsample agents for arrows
     for (let i = 0; i < agents.length; i += 8) {
       const a = agents[i];
+      if (a.state === 'ADMITTED' || a.state === 'INSIDE') continue;
       const speed = Math.sqrt(a.vx * a.vx + a.vy * a.vy);
       if (speed < 0.2) continue;
 
@@ -610,10 +613,17 @@ export class CanvasRenderer {
       ctx.textAlign = 'center';
       ctx.fillText(g.name, g.position.x, g.position.y - 3.2);
 
+      const admitted = g.admittedCount || g.totalProcessedCount || 0;
+      if (admitted > 0) {
+        ctx.fillStyle = '#10B981';
+        ctx.font = 'bold 2.0px monospace';
+        ctx.fillText(`✓ ${admitted.toLocaleString()} in`, g.position.x, g.position.y + 4.2);
+      }
+
       if (g.currentQueue > 0) {
         ctx.fillStyle = '#EF4444';
-        ctx.font = 'bold 2.4px monospace';
-        ctx.fillText(`Q: ${g.currentQueue}`, g.position.x, g.position.y + 4.5);
+        ctx.font = 'bold 2.2px monospace';
+        ctx.fillText(`Q: ${g.currentQueue}`, g.position.x, g.position.y + (admitted > 0 ? 6.8 : 4.2));
       }
     }
     ctx.restore();

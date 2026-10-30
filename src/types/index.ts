@@ -38,6 +38,11 @@ export interface Gate {
   initialQueue?: number;
   totalArrivalsCount?: number;
   totalProcessedCount?: number;
+  admittedCount?: number;
+  currentArrivalRatePerMin?: number;
+  actualProcessingRatePerMin?: number;
+  effectiveCapacityPerMin?: number;
+  counterUtilizationPercent?: number;
   maxQueueRecorded?: number;
   queueAreaCapacity?: number;
   spillbackCount?: number;
@@ -140,6 +145,7 @@ export type AgentState =
   | 'APPROACHING'
   | 'QUEUING'
   | 'PROCESSING'
+  | 'ADMITTED'
   | 'INSIDE'
   | 'EN_ROUTE_DESTINATION'
   | 'WAITING_ATTRACTION'
@@ -313,6 +319,16 @@ export interface SimulationMetricsSummary {
   arrivalRatePerMin: number;
   gateThroughputPerMin: number;
   destinationReachedCount: number;
+  totalAdmitted?: number;
+  totalWaitingOutside?: number;
+  totalProcessing?: number;
+}
+
+export interface GateEntrySnapshot {
+  timestamp: number; // simulation seconds
+  timeFormatted: string; // mm:ss
+  gateEntries: Record<string, number>; // gateId -> cumulative admitted count
+  totalAdmitted: number;
 }
 
 export type ZoneComparisonStatus =

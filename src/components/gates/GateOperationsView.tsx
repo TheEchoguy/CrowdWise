@@ -73,6 +73,41 @@ export const GateOperationsView: React.FC = () => {
         </div>
       </div>
 
+      {/* OVERALL VENUE ADMISSION & THROUGHPUT TELEMETRY BANNER */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 bg-navy-850 p-4 rounded-2xl border border-navy-700 shadow-md text-xs">
+        <div className="bg-navy-900/80 p-3 rounded-xl border border-emerald-500/40">
+          <span className="text-[10px] text-emerald-400 font-bold block uppercase tracking-wider">Total Admitted (Venue)</span>
+          <span className="font-mono text-xl font-extrabold text-white">
+            {currentVenue.gates.reduce((sum, g) => sum + (g.admittedCount || g.totalProcessedCount || 0), 0).toLocaleString()}
+          </span>
+          <span className="text-[10px] text-slate-400 block mt-0.5">pedestrians entered</span>
+        </div>
+
+        <div className="bg-navy-900/80 p-3 rounded-xl border border-amber-500/40">
+          <span className="text-[10px] text-amber-400 font-bold block uppercase tracking-wider">Total External Queue</span>
+          <span className="font-mono text-xl font-extrabold text-white">
+            {currentVenue.gates.reduce((sum, g) => sum + g.currentQueue, 0).toLocaleString()}
+          </span>
+          <span className="text-[10px] text-slate-400 block mt-0.5">waiting in perimeter pens</span>
+        </div>
+
+        <div className="bg-navy-900/80 p-3 rounded-xl border border-navy-750">
+          <span className="text-[10px] text-cyan-400 font-bold block uppercase tracking-wider">Operational Turnstiles</span>
+          <span className="font-mono text-xl font-extrabold text-slate-100">
+            {currentVenue.gates.reduce((sum, g) => sum + g.operationalScanners, 0)} / {currentVenue.gates.reduce((sum, g) => sum + g.scannerCount, 0)}
+          </span>
+          <span className="text-[10px] text-slate-400 block mt-0.5">active counter lanes</span>
+        </div>
+
+        <div className="bg-navy-900/80 p-3 rounded-xl border border-navy-750">
+          <span className="text-[10px] text-slate-400 font-bold block uppercase tracking-wider">Venue Entry Capacity</span>
+          <span className="font-mono text-xl font-extrabold text-emerald-400">
+            {currentVenue.gates.reduce((sum, g) => sum + (g.effectiveCapacityPerMin || (g.operationalScanners * (g.scannerProcessingRatePerMin || 60))), 0).toLocaleString()}
+          </span>
+          <span className="text-[10px] text-slate-400 block mt-0.5">people / minute</span>
+        </div>
+      </div>
+
       {/* DYNAMIC ROUTE-AWARE RECOMMENDATION ENGINE PANEL */}
       {recommendations.length > 0 && (
         <div className="bg-gradient-to-r from-navy-850 via-cyan-950/40 to-navy-850 border border-cyan-500/40 rounded-2xl p-5 shadow-xl space-y-4">
@@ -186,6 +221,23 @@ export const GateOperationsView: React.FC = () => {
                 >
                   {g.status}
                 </span>
+              </div>
+
+              {/* Live Admitted Entry Counter Banner */}
+              <div className="bg-emerald-950/30 border border-emerald-700/50 rounded-xl p-2.5 flex items-center justify-between">
+                <div>
+                  <span className="text-[10px] text-emerald-400 block font-semibold">Total People Admitted</span>
+                  <span className="font-mono text-base font-extrabold text-white">
+                    {(g.admittedCount || g.totalProcessedCount || 0).toLocaleString()}{' '}
+                    <span className="text-xs font-normal text-emerald-300">entered</span>
+                  </span>
+                </div>
+                <div className="text-right">
+                  <span className="text-[10px] text-slate-400 block">Processing Cap</span>
+                  <span className="font-mono text-xs font-bold text-cyan-300">
+                    {g.effectiveCapacityPerMin || (g.operationalScanners * (g.scannerProcessingRatePerMin || 60))} ppl/m
+                  </span>
+                </div>
               </div>
 
               {/* Real-time Metrics Card */}

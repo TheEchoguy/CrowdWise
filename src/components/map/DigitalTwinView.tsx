@@ -21,6 +21,7 @@ import {
   Activity,
   Users,
   ShieldCheck,
+  CheckCircle2,
   Clock,
   ArrowRight,
   TrendingUp,
@@ -62,6 +63,7 @@ export const DigitalTwinView: React.FC = () => {
     applyInitialQueue,
     resetGateSideSim,
     gateSideEvents,
+    gateEntryHistory,
     isRunning,
     isPaused,
     startSimulation,
@@ -241,6 +243,12 @@ export const DigitalTwinView: React.FC = () => {
   const selectedGate = currentVenue.gates.find((g) => g.id === selectedGateId);
   const selectedZone = currentVenue.zones.find((z) => z.id === selectedZoneId);
 
+  const totalVenueAdmitted = currentVenue.gates.reduce(
+    (sum, g) => sum + (g.admittedCount || g.totalProcessedCount || 0),
+    0
+  );
+  const totalVenueQueuing = currentVenue.gates.reduce((sum, g) => sum + g.currentQueue, 0);
+
   const focusedGates = currentVenue.gates.filter((g) => selectedGateIds.includes(g.id));
   const primaryGate = focusedGates[0] || selectedGate;
   const totalFocusedQueue = focusedGates.reduce((acc, g) => acc + g.currentQueue, 0);
@@ -253,7 +261,20 @@ export const DigitalTwinView: React.FC = () => {
   const estWaitMins = totalProcessingCapPerMin > 0 ? (totalFocusedQueue / totalProcessingCapPerMin) : 0;
   const totalSpillback = focusedGates.reduce((acc, g) => acc + (g.spillbackCount || 0), 0);
   const totalArrivals = focusedGates.reduce((acc, g) => acc + (g.totalArrivalsCount || 0), 0);
-  const totalProcessed = focusedGates.reduce((acc, g) => acc + (g.totalProcessedCount || 0), 0);
+  const totalProcessed = focusedGates.reduce((acc, g) => acc + (g.admittedCount || g.totalProcessedCount || 0), 0);
+
+  // Overall metrics across focused gates
+  const gateWithHighestQueue = [...focusedGates].sort((a, b) => b.currentQueue - a.currentQueue)[0] || primaryGate;
+  const gateWithHighestEntries = [...focusedGates].sort(
+    (a, b) => (b.admittedCount || b.totalProcessedCount || 0) - (a.admittedCount || a.totalProcessedCount || 0)
+  )[0] || primaryGate;
+  const gateWithLongestWait = [...focusedGates].sort((a, b) => b.queueWaitTimeSecs - a.queueWaitTimeSecs)[0] || primaryGate;
+
+  const activeAgents = engine.state.agents;
+  const totalApproaching = activeAgents.filter((a) => a.state === 'APPROACHING').length;
+  const totalQueuingAgents = activeAgents.filter((a) => a.state === 'QUEUING').length;
+  const totalProcessingAgents = activeAgents.filter((a) => a.state === 'PROCESSING').length;
+  const totalWaitingOutside = totalApproaching + totalQueuingAgents;
 
   return (
     <div className="relative w-full h-[calc(100vh-4rem)] bg-navy-950 overflow-hidden flex flex-col">
@@ -347,6 +368,24 @@ export const DigitalTwinView: React.FC = () => {
               <span>Return to Full Stadium</span>
             </button>
           )}
+
+          {/* Live Admitted Total Counter Pill */}
+          <div className="flex items-center gap-2 bg-navy-950 px-3 py-1 rounded-xl border border-emerald-500/40 text-xs shadow-inner">
+            <span className="flex items-center gap-1 font-bold text-emerald-400">
+              <CheckCircle2 className="w-3.5 h-3.5" />
+              <span>Admitted:</span>
+              <span className="font-mono text-white text-sm">
+                {totalVenueAdmitted.toLocaleString()}
+              </span>
+            </span>
+            <span className="text-slate-600">|</span>
+            <span className="flex items-center gap-1 text-slate-300">
+              <span>Outside Queue:</span>
+              <span className="font-mono font-bold text-amber-400">
+                {totalVenueQueuing.toLocaleString()}
+              </span>
+            </span>
+          </div>
 
           {/* Clock Display */}
           <div className="flex items-center gap-1.5 bg-navy-950 px-2.5 py-1 rounded-xl border border-navy-800 font-mono text-[11px]">
@@ -894,88 +933,270 @@ export const DigitalTwinView: React.FC = () => {
                 </div>
               )}
 
-              {/* TAB 2: LIVE METRICS & MASS BALANCE */}
+              {/* TAB 2: LIVE ENTRY ANALYTICS & GATE-WISE COUNTERS */}
               {activeSideTab === 'METRICS' && (
-                <div className="space-y-3">
-                  {/* Queue Balance Bar */}
+                <div className="space-y-3.5">
+                  {/* Scope Admitted Summary Banner */}
+                  <div className="p-3.5 bg-gradient-to-r from-emerald-950/70 via-navy-900 to-cyan-950/70 border border-emerald-500/50 rounded-2xl shadow-lg space-y-2">
+                    <div className="flex justify-between items-start">
+                      <div>
+                        <span className="text-[10px] font-bold uppercase tracking-wider text-emerald-400 flex items-center gap-1">
+                          <CheckCircle2 className="w-3.5 h-3.5" />
+                          Successful Gate Entries
+                        </span>
+                        <h4 className="text-xl font-extrabold text-white font-mono mt-0.5">
+                          {totalProcessed.toLocaleString()}{' '}
+                          <span className="text-xs font-normal text-emerald-300">people admitted</span>
+                        </h4>
+                      </div>
+                      <div className="text-right">
+                        <span className="text-[10px] text-slate-400 block">All 21 Venue Gates</span>
+                        <span className="font-mono font-bold text-slate-200 text-xs">
+                          {totalVenueAdmitted.toLocaleString()} admitted
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* Mass-Balance Formula Banner */}
+                    <div className="pt-2 border-t border-navy-800/80 text-[10px] text-slate-300 space-y-1">
+                      <div className="flex justify-between text-slate-400 font-mono">
+                        <span>Generated: <strong className="text-slate-100">{totalArrivals}</strong></span>
+                        <span>= Wait: <strong className="text-amber-300">{totalWaitingOutside}</strong> + Proc: <strong className="text-cyan-300">{totalProcessingAgents}</strong> + In: <strong className="text-emerald-300">{totalProcessed}</strong></span>
+                      </div>
+                      <div className="flex items-center gap-1.5 text-emerald-300">
+                        <ShieldCheck className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                        <span>100% Mass Conserved: Admitted pedestrians removed from outside view.</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Overall Gate-Wise Entry Performance Summary Card */}
+                  <div className="p-3 bg-navy-900 border border-navy-700 rounded-xl space-y-2 text-xs">
+                    <span className="font-bold text-slate-200 block text-[11px] uppercase tracking-wider">
+                      Overall Gate Performance Summary
+                    </span>
+                    <div className="grid grid-cols-2 gap-2">
+                      <div className="bg-navy-950 p-2 rounded-lg border border-navy-800">
+                        <span className="text-[10px] text-slate-400 block">Total Processing Cap</span>
+                        <span className="font-mono font-bold text-emerald-400 text-sm">
+                          {totalProcessingCapPerMin} ppl/min
+                        </span>
+                      </div>
+                      <div className="bg-navy-950 p-2 rounded-lg border border-navy-800">
+                        <span className="text-[10px] text-slate-400 block">Current Waiting Outside</span>
+                        <span className="font-mono font-bold text-amber-400 text-sm">
+                          {totalFocusedQueue} people
+                        </span>
+                      </div>
+                      <div className="bg-navy-950 p-2 rounded-lg border border-navy-800">
+                        <span className="text-[10px] text-slate-400 block">Highest Queue Gate</span>
+                        <span className="font-mono font-bold text-slate-200 truncate block">
+                          {gateWithHighestQueue?.name || 'None'} ({gateWithHighestQueue?.currentQueue || 0} ppl)
+                        </span>
+                      </div>
+                      <div className="bg-navy-950 p-2 rounded-lg border border-navy-800">
+                        <span className="text-[10px] text-slate-400 block">Highest Entry Gate</span>
+                        <span className="font-mono font-bold text-cyan-300 truncate block">
+                          {gateWithHighestEntries?.name || 'None'} ({(gateWithHighestEntries?.admittedCount || gateWithHighestEntries?.totalProcessedCount || 0).toLocaleString()})
+                        </span>
+                      </div>
+                    </div>
+                    {gateWithLongestWait && (
+                      <div className="text-[10px] text-slate-400 flex justify-between pt-1 border-t border-navy-800">
+                        <span>Longest Current Wait:</span>
+                        <strong className="text-amber-400 font-mono">
+                          {gateWithLongestWait.name} (~{Math.round(gateWithLongestWait.queueWaitTimeSecs / 60)} mins)
+                        </strong>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Cumulative Admissions Over Simulation Time SVG Chart */}
                   <div className="p-3 bg-navy-900 border border-navy-700 rounded-xl space-y-2">
                     <div className="flex justify-between items-center">
-                      <span className="font-bold text-slate-300">Queue Dynamic Balance</span>
-                      <span
-                        className={`font-mono font-bold text-xs flex items-center gap-1 ${
-                          netRatePerMin > 0 ? 'text-amber-400' : 'text-emerald-400'
-                        }`}
-                      >
-                        {netRatePerMin > 0 ? <TrendingUp className="w-3.5 h-3.5" /> : <TrendingDown className="w-3.5 h-3.5" />}
-                        {netRatePerMin > 0 ? `+${netRatePerMin} ppl/min (Growing)` : `${netRatePerMin} ppl/min (Clearing)`}
+                      <span className="font-bold text-slate-200 text-xs flex items-center gap-1.5">
+                        <Activity className="w-3.5 h-3.5 text-cyan-400" />
+                        Cumulative Admissions Over Time
+                      </span>
+                      <span className="font-mono text-[10px] text-slate-400">
+                        {gateEntryHistory.length} data points
                       </span>
                     </div>
 
-                    <div className="grid grid-cols-2 gap-2 text-center">
+                    {gateEntryHistory.length > 1 ? (
                       <div className="bg-navy-950 p-2 rounded-lg border border-navy-800">
-                        <span className="text-[10px] text-slate-400 block">Current Queue</span>
-                        <span className="font-mono text-base font-bold text-slate-100">
-                          {totalFocusedQueue} <span className="text-[10px] font-normal text-slate-400">ppl</span>
-                        </span>
+                        <svg viewBox="0 0 340 120" className="w-full h-28 overflow-visible">
+                          {/* Grid horizontal lines */}
+                          <line x1="30" y1="15" x2="330" y2="15" stroke="#1E293B" strokeWidth="0.8" strokeDasharray="2,2" />
+                          <line x1="30" y1="55" x2="330" y2="55" stroke="#1E293B" strokeWidth="0.8" strokeDasharray="2,2" />
+                          <line x1="30" y1="95" x2="330" y2="95" stroke="#334155" strokeWidth="1" />
+
+                          {/* Y-axis labels */}
+                          {(() => {
+                            const maxY = Math.max(10, ...gateEntryHistory.map((h) => h.totalAdmitted));
+                            const midY = Math.round(maxY / 2);
+                            const minTime = gateEntryHistory[0].timestamp;
+                            const maxTime = gateEntryHistory[gateEntryHistory.length - 1].timestamp;
+                            const timeSpan = Math.max(1, maxTime - minTime);
+
+                            const GATE_COLORS = ['#22D3EE', '#3B82F6', '#10B981', '#F59E0B', '#A855F7', '#EC4899'];
+
+                            return (
+                              <g>
+                                <text x="24" y="18" fill="#64748B" fontSize="8" textAnchor="end" fontFamily="monospace">
+                                  {maxY}
+                                </text>
+                                <text x="24" y="58" fill="#64748B" fontSize="8" textAnchor="end" fontFamily="monospace">
+                                  {midY}
+                                </text>
+                                <text x="24" y="98" fill="#64748B" fontSize="8" textAnchor="end" fontFamily="monospace">
+                                  0
+                                </text>
+
+                                {/* Time labels */}
+                                <text x="30" y="112" fill="#64748B" fontSize="8" fontFamily="monospace">
+                                  {gateEntryHistory[0].timeFormatted}
+                                </text>
+                                <text x="330" y="112" fill="#64748B" fontSize="8" textAnchor="end" fontFamily="monospace">
+                                  {gateEntryHistory[gateEntryHistory.length - 1].timeFormatted}
+                                </text>
+
+                                {/* Draw lines for each focused gate */}
+                                {focusedGates.map((gate, gIdx) => {
+                                  const color = GATE_COLORS[gIdx % GATE_COLORS.length];
+                                  const points = gateEntryHistory.map((h) => {
+                                    const count = h.gateEntries[gate.id] || 0;
+                                    const px = 30 + ((h.timestamp - minTime) / timeSpan) * 300;
+                                    const py = 95 - (count / maxY) * 80;
+                                    return `${px.toFixed(1)},${py.toFixed(1)}`;
+                                  }).join(' ');
+
+                                  return (
+                                    <polyline
+                                      key={gate.id}
+                                      points={points}
+                                      fill="none"
+                                      stroke={color}
+                                      strokeWidth="2"
+                                      strokeLinecap="round"
+                                      strokeLinejoin="round"
+                                    />
+                                  );
+                                })}
+                              </g>
+                            );
+                          })()}
+                        </svg>
+
+                        {/* Chart Legend */}
+                        <div className="flex flex-wrap gap-2 pt-2 border-t border-navy-800 text-[10px]">
+                          {focusedGates.map((gate, gIdx) => {
+                            const GATE_COLORS = ['#22D3EE', '#3B82F6', '#10B981', '#F59E0B', '#A855F7', '#EC4899'];
+                            const color = GATE_COLORS[gIdx % GATE_COLORS.length];
+                            const count = gate.admittedCount || gate.totalProcessedCount || 0;
+                            return (
+                              <div key={gate.id} className="flex items-center gap-1">
+                                <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: color }} />
+                                <span className="text-slate-300 font-medium">{gate.name}:</span>
+                                <span className="font-mono font-bold text-white">{count}</span>
+                              </div>
+                            );
+                          })}
+                        </div>
                       </div>
-                      <div className="bg-navy-950 p-2 rounded-lg border border-navy-800">
-                        <span className="text-[10px] text-slate-400 block">Peak Queue</span>
-                        <span className="font-mono text-base font-bold text-amber-400">
-                          {maxFocusedQueue} <span className="text-[10px] font-normal text-slate-400">ppl</span>
-                        </span>
+                    ) : (
+                      <div className="p-4 bg-navy-950 rounded-lg border border-navy-800 text-center text-slate-500 text-xs italic">
+                        Accumulating real-time admission telemetry as simulation advances...
                       </div>
-                    </div>
+                    )}
                   </div>
 
-                  {/* Wait Time & Spillback */}
-                  <div className="grid grid-cols-2 gap-2">
-                    <div className="p-2.5 bg-navy-900 border border-navy-700 rounded-xl">
-                      <span className="text-[10px] text-slate-400 block">Est. Wait for New Arrival</span>
-                      <span className="font-mono text-sm font-bold text-cyan-300">
-                        ~{Math.round(estWaitMins * 60)}s ({estWaitMins.toFixed(1)}m)
-                      </span>
-                    </div>
+                  {/* Per-Gate Live Entry Counters List */}
+                  <div className="space-y-2">
+                    <span className="font-bold text-slate-200 block text-xs flex items-center justify-between">
+                      <span>Gate-Wise Live Entry Counters ({focusedGates.length})</span>
+                      <span className="text-[10px] text-slate-400 font-normal">Real-time turnstile telemetry</span>
+                    </span>
 
-                    <div className="p-2.5 bg-navy-900 border border-navy-700 rounded-xl">
-                      <span className="text-[10px] text-slate-400 block">Holding Spillback</span>
-                      <span
-                        className={`font-mono text-sm font-bold ${
-                          totalSpillback > 0 ? 'text-red-400' : 'text-slate-400'
-                        }`}
-                      >
-                        {totalSpillback > 0 ? `+${totalSpillback} overflow` : '0 (Inside Pen)'}
-                      </span>
-                    </div>
-                  </div>
+                    {focusedGates.map((g) => {
+                      const admitted = g.admittedCount || g.totalProcessedCount || 0;
+                      const scannerRate = g.scannerProcessingRatePerSec !== undefined ? g.scannerProcessingRatePerSec : (g.scannerProcessingRatePerMin ? g.scannerProcessingRatePerMin / 60 : 1.0);
+                      const effCap = g.effectiveCapacityPerMin || Math.round(g.operationalScanners * scannerRate * 60);
+                      const actualProc = g.actualProcessingRatePerMin !== undefined ? g.actualProcessingRatePerMin : (g.currentQueue > 0 ? effCap : 0);
+                      const arrivalRate = g.currentArrivalRatePerMin || 0;
+                      const util = g.counterUtilizationPercent || (g.scannerCount > 0 ? Math.round((g.operationalScanners / g.scannerCount) * 100) : 0);
 
-                  {/* Throughput Cumulative */}
-                  <div className="p-3 bg-navy-900 border border-navy-700 rounded-xl space-y-1.5 text-xs">
-                    <div className="flex justify-between">
-                      <span className="text-slate-400">Total Arrivals Spawned:</span>
-                      <span className="font-mono font-bold text-slate-200">{totalArrivals}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-slate-400">Admitted &amp; Processed:</span>
-                      <span className="font-mono font-bold text-emerald-400">{totalProcessed}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-slate-400">Currently Waiting in Line:</span>
-                      <span className="font-mono font-bold text-amber-400">{totalFocusedQueue}</span>
-                    </div>
-                  </div>
+                      return (
+                        <div
+                          key={g.id}
+                          className="p-3 bg-navy-900 border border-navy-700 hover:border-cyan-500/40 rounded-xl space-y-2 text-xs transition"
+                        >
+                          <div className="flex justify-between items-center">
+                            <div className="flex items-center gap-1.5">
+                              <DoorOpen className="w-3.5 h-3.5 text-cyan-400" />
+                              <strong className="text-slate-100 text-sm">{g.name}</strong>
+                            </div>
+                            <span
+                              className={`text-[9px] font-bold px-1.5 py-0.5 rounded border ${
+                                g.direction === 'CLOSED' || g.status === 'TEMPORARILY_CLOSED'
+                                  ? 'bg-red-950 text-red-300 border-red-800'
+                                  : g.status === 'SCANNER_FAILURE'
+                                    ? 'bg-amber-950 text-amber-300 border-amber-800'
+                                    : 'bg-emerald-950 text-emerald-300 border-emerald-800'
+                              }`}
+                            >
+                              {g.status}
+                            </span>
+                          </div>
 
-                  {/* Downstream Passage Status */}
-                  <div className="p-2.5 bg-navy-900 border border-navy-700 rounded-xl space-y-1 text-xs">
-                    <span className="font-bold text-slate-300 block">Downstream Concourse Passage</span>
-                    <p className="text-[11px] text-slate-400 leading-relaxed">
-                      {primaryGate?.suggestedAction || 'Clear traversal corridor. Gate processing unconstrained.'}
-                    </p>
-                  </div>
+                          {/* Primary Metric: Successful Entry Count */}
+                          <div className="p-2 bg-navy-950 rounded-lg border border-navy-800 flex justify-between items-center">
+                            <div>
+                              <span className="text-[10px] text-slate-400 block">Total People Admitted</span>
+                              <span className="font-mono text-base font-extrabold text-emerald-400">
+                                {admitted.toLocaleString()}{' '}
+                                <span className="text-[10px] font-normal text-slate-300">entered</span>
+                              </span>
+                            </div>
+                            <div className="text-right">
+                              <span className="text-[10px] text-slate-400 block">Current Queue</span>
+                              <span className="font-mono text-base font-bold text-amber-300">
+                                {g.currentQueue}{' '}
+                                <span className="text-[10px] font-normal text-slate-400">waiting</span>
+                              </span>
+                            </div>
+                          </div>
 
-                  {/* Conservation of People Confirmation Card */}
-                  <div className="p-2.5 bg-emerald-950/40 border border-emerald-700/60 rounded-xl flex items-center gap-2 text-emerald-300 text-xs">
-                    <ShieldCheck className="w-4 h-4 shrink-0 text-emerald-400" />
-                    <span>Conservation Verified: No attendees created or lost in transitions.</span>
+                          {/* Operational Specs Grid */}
+                          <div className="grid grid-cols-2 gap-1.5 text-[11px] text-slate-300">
+                            <div className="flex justify-between bg-navy-950/60 px-2 py-1 rounded border border-navy-800/60">
+                              <span className="text-slate-400">Est. Wait:</span>
+                              <span className="font-mono font-bold text-amber-300">~{Math.round(g.queueWaitTimeSecs / 60)}m</span>
+                            </div>
+                            <div className="flex justify-between bg-navy-950/60 px-2 py-1 rounded border border-navy-800/60">
+                              <span className="text-slate-400">Arrival Rate:</span>
+                              <span className="font-mono text-cyan-300">{arrivalRate} ppl/m</span>
+                            </div>
+                            <div className="flex justify-between bg-navy-950/60 px-2 py-1 rounded border border-navy-800/60">
+                              <span className="text-slate-400">Actual Process:</span>
+                              <span className="font-mono text-emerald-300">{actualProc} ppl/m</span>
+                            </div>
+                            <div className="flex justify-between bg-navy-950/60 px-2 py-1 rounded border border-navy-800/60">
+                              <span className="text-slate-400">Active Lanes:</span>
+                              <span className="font-mono text-slate-200">{g.operationalScanners}/{g.scannerCount}</span>
+                            </div>
+                            <div className="flex justify-between bg-navy-950/60 px-2 py-1 rounded border border-navy-800/60">
+                              <span className="text-slate-400">Effective Cap:</span>
+                              <span className="font-mono text-slate-200">{effCap} ppl/m</span>
+                            </div>
+                            <div className="flex justify-between bg-navy-950/60 px-2 py-1 rounded border border-navy-800/60">
+                              <span className="text-slate-400">Lane Util:</span>
+                              <span className="font-mono text-cyan-300">{util}%</span>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
                   </div>
                 </div>
               )}

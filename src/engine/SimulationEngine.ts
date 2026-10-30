@@ -16,6 +16,7 @@ import {
   GateRoutingPolicy,
   GateSideSimConfig,
   GateSideEvent,
+  GateEntrySnapshot,
 } from '../types';
 import { PRNG } from './random';
 import { distance, normalize, sub, add, scale, pointInPolygon } from './geometry';
@@ -75,6 +76,9 @@ export class SimulationEngine {
     durationSecs: 300,
   };
   public gateSideEvents: GateSideEvent[] = [];
+  public totalAdmittedCount: number = 0;
+  public totalGeneratedArrivals: number = 0;
+  public gateEntryHistory: GateEntrySnapshot[] = [];
   private gateProcessingAccumulators: Map<string, number> = new Map();
   private gateArrivalAccumulator: number = 0;
 
@@ -118,6 +122,7 @@ export class SimulationEngine {
 
     this.buildNavigationGraph();
     this.recordMetricsSnapshot();
+    this.gateEntryHistory = [];
   }
 
   public setVenue(venue: Venue): void {
@@ -211,15 +216,19 @@ export class SimulationEngine {
     if (targets.length === 0) return;
 
     for (const g of targets) {
+      const removedCount = this.state.agents.filter(
+        (a) => a.targetGateId === g.id && (a.state === 'QUEUING' || a.state === 'PROCESSING')
+      ).length;
+      this.state.agents = this.state.agents.filter(
+        (a) => !(a.targetGateId === g.id && (a.state === 'QUEUING' || a.state === 'PROCESSING'))
+      );
+      this.totalGeneratedArrivals = Math.max(0, this.totalGeneratedArrivals - removedCount);
+
       g.currentQueue = count;
       g.initialQueue = count;
       g.totalArrivalsCount = (g.totalArrivalsCount || 0) + count;
       g.maxQueueRecorded = Math.max(g.maxQueueRecorded || 0, count);
-
-      // Clean existing queued agents at this gate to avoid collision
-      this.state.agents = this.state.agents.filter(
-        (a) => !(a.targetGateId === g.id && (a.state === 'QUEUING' || a.state === 'PROCESSING'))
-      );
+      this.totalGeneratedArrivals += count;
 
       const cx = this.state.venue.dimensions.width / 2;
       const cy = this.state.venue.dimensions.height / 2;
@@ -231,7 +240,7 @@ export class SimulationEngine {
       const tx = -ny;
       const ty = nx;
 
-      const visualCount = Math.min(100, count);
+      const visualCount = count;
       const lanes = Math.max(1, g.scannerCount);
 
       for (let k = 0; k < visualCount; k++) {
@@ -242,8 +251,7 @@ export class SimulationEngine {
 
         const posX = g.position.x + nx * distBack + tx * offsetT;
         const posY = g.position.y + ny * distBack + ty * offsetT;
-
-        const agent: CrowdAgent = {
+    const agent: CrowdAgent = {
           id: this.nextAgentId++,
           x: posX,
           y: posY,
@@ -409,7 +417,10 @@ export class SimulationEngine {
     // 2. Spatial Grid rebuild for collision avoidance
     this.spatialGrid.clear();
     for (let i = 0; i < this.state.agents.length; i++) {
-      this.spatialGrid.insert(this.state.agents[i]);
+      const a = this.state.agents[i];
+      if (a.state !== 'ADMITTED' && a.state !== 'INSIDE') {
+        this.spatialGrid.insert(a);
+      }
     }
 
     // 3. Update Agents (Movement, Queuing, Social Forces)
@@ -568,6 +579,7 @@ export class SimulationEngine {
       targetGate = selectedGates[0];
     }
 
+    this.totalGeneratedArrivals++;
     targetGate.totalArrivalsCount = (targetGate.totalArrivalsCount || 0) + 1;
 
     // Spawn point along gate's approach route
@@ -681,6 +693,7 @@ export class SimulationEngine {
     // Compute navigation path from spawn to target
     const path = this.navGraph.findPath({ x: spawnX, y: spawnY }, targetPos);
 
+    this.totalGeneratedArrivals++;
     const agent: CrowdAgent = {
       id: this.nextAgentId++,
       x: spawnX,
@@ -713,6 +726,9 @@ export class SimulationEngine {
 
     for (let i = 0; i < agents.length; i++) {
       const a = agents[i];
+      if (a.state === 'ADMITTED' || a.state === 'INSIDE') {
+        continue;
+      }
       a.stridePhase += a.preferredSpeed * dt * 4;
 
       if (a.state === 'QUEUING' || a.state === 'PROCESSING') {
@@ -855,6 +871,8 @@ export class SimulationEngine {
     for (const g of v.gates) {
       if (g.direction === 'CLOSED' || g.status === 'TEMPORARILY_CLOSED' || g.status === 'UNAVAILABLE') {
         g.queueWaitTimeSecs = 9999;
+        g.effectiveCapacityPerMin = 0;
+        g.actualProcessingRatePerMin = 0;
         continue;
       }
 
@@ -890,65 +908,26 @@ export class SimulationEngine {
           const queuingAgents = this.state.agents.filter(
             (a) => (a.state === 'QUEUING' || a.state === 'PROCESSING') && a.targetGateId === g.id
           );
+          // Sort queuingAgents so that agents in 'PROCESSING' state (front lanes) are admitted first
+          queuingAgents.sort((a, b) => (a.state === 'PROCESSING' ? -1 : (b.state === 'PROCESSING' ? 1 : 0)));
 
           for (let i = 0; i < toProcess; i++) {
             g.currentQueue = Math.max(0, g.currentQueue - 1);
             g.totalProcessedCount = (g.totalProcessedCount || 0) + 1;
+            g.admittedCount = g.totalProcessedCount;
+            this.totalAdmittedCount = (this.totalAdmittedCount || 0) + 1;
 
             if (i < queuingAgents.length) {
               const agent = queuingAgents[i];
-              agent.state = 'INSIDE';
+              agent.state = 'ADMITTED';
               agent.enteredTime = this.state.simTimeSecs;
-
-              // Route agent to local downstream concourse or nearest concourse sector
-          let targetZone: Zone | null = null;
-          if (g.downstreamCorridorId) {
-            const corr = v.corridors.find((c) => c.id === g.downstreamCorridorId);
-            if (corr) {
-              targetZone = v.zones.find((z) => z.id === corr.toZoneId) || null;
+              agent.vx = 0;
+              agent.vy = 0;
+              agent.pathWaypoints = [];
             }
-          }
-          if (!targetZone) {
-            let minDist = Infinity;
-            v.zones
-              .filter((z) => z.category === 'CONCOURSE')
-              .forEach((z) => {
-                let cx = 0, cy = 0;
-                z.polygon.forEach((p) => { cx += p.x; cy += p.y; });
-                const c = { x: cx / z.polygon.length, y: cy / z.polygon.length };
-                const d = distance(g.position, c);
-                if (d < minDist) {
-                  minDist = d;
-                  targetZone = z;
-                }
-              });
-          }
-          if (!targetZone) {
-            targetZone = this.prng.choice(
-              v.zones.filter((z) => z.category === 'CONCOURSE' || z.category === 'SEATING')
-            );
-          }
-          if (targetZone) {
-            let cx = 0,
-              cy = 0;
-            targetZone.polygon.forEach((p) => {
-              cx += p.x;
-              cy += p.y;
-            });
-            const center = {
-              x: cx / targetZone.polygon.length + this.prng.range(-5, 5),
-              y: cy / targetZone.polygon.length + this.prng.range(-5, 5),
-            };
-            agent.pathWaypoints = this.navGraph.findPath({ x: agent.x, y: agent.y }, center);
-            agent.currentWaypointIdx = 0;
-            agent.targetX = center.x;
-            agent.targetY = center.y;
-            agent.targetZoneId = targetZone.id;
           }
         }
       }
-    }
-  }
 
       this.gateProcessingAccumulators.set(g.id, acc);
 
@@ -987,6 +966,29 @@ export class SimulationEngine {
           g.status = 'OPERATIONAL';
         }
       }
+
+      // Update Gate-Wise Entry and Rate Metrics
+      const scannerRate =
+        g.scannerProcessingRatePerSec !== undefined
+          ? g.scannerProcessingRatePerSec
+          : (g.scannerProcessingRatePerMin ? g.scannerProcessingRatePerMin / 60 : 1.0);
+      g.effectiveCapacityPerMin = Math.round(g.operationalScanners * scannerRate * 60);
+      g.actualProcessingRatePerMin =
+        g.currentQueue > 0
+          ? g.effectiveCapacityPerMin
+          : 0;
+      g.counterUtilizationPercent =
+        g.scannerCount > 0 ? Math.round((g.operationalScanners / g.scannerCount) * 100) : 0;
+      g.admittedCount = g.totalProcessedCount || 0;
+
+      if (this.gateSideConfig.selectedGateIds.includes(g.id)) {
+        g.currentArrivalRatePerMin = Math.round(
+          this.gateSideConfig.inflowRatePerMin / Math.max(1, this.gateSideConfig.selectedGateIds.length)
+        );
+      } else {
+        const simMins = Math.max(0.1, this.state.simTimeSecs / 60);
+        g.currentArrivalRatePerMin = Math.round((g.totalArrivalsCount || 0) / simMins);
+      }
     }
   }
 
@@ -1005,6 +1007,9 @@ export class SimulationEngine {
 
     for (let i = 0; i < agents.length; i++) {
       const a = agents[i];
+      if (a.state === 'ADMITTED' || a.state === 'INSIDE') {
+        continue;
+      }
       const z = this.findZoneForPoint({ x: a.x, y: a.y });
       if (z) {
         zoneCounts.set(z.id, (zoneCounts.get(z.id) || 0) + 1);
@@ -1309,11 +1314,25 @@ export class SimulationEngine {
     this.gateArrivalAccumulator = 0;
     this.prng.reset(this.state.randomSeed);
 
+    this.totalAdmittedCount = 0;
+    this.totalGeneratedArrivals = 0;
+    this.gateEntryHistory = [];
+
     // Reset gates & zones
     this.state.venue.gates.forEach((g) => {
       g.currentQueue = 0;
+      g.totalArrivalsCount = 0;
+      g.totalProcessedCount = 0;
+      g.admittedCount = 0;
+      g.maxQueueRecorded = 0;
+      g.spillbackCount = 0;
+      g.initialQueue = 0;
       g.queueWaitTimeSecs = 0;
       g.warningLevel = 'NORMAL';
+      g.actualProcessingRatePerMin = 0;
+      g.currentArrivalRatePerMin = 0;
+      g.effectiveCapacityPerMin = Math.round(g.operationalScanners * (g.scannerProcessingRatePerSec || 1.0) * 60);
+      g.counterUtilizationPercent = 100;
       if (g.direction !== 'CLOSED' && g.direction !== 'EMERGENCY_ONLY') {
         g.status = 'OPERATIONAL';
         g.operationalScanners = g.scannerCount;
@@ -1333,6 +1352,7 @@ export class SimulationEngine {
 
     this.buildNavigationGraph();
     this.recordMetricsSnapshot();
+    this.gateEntryHistory = [];
   }
 
   private logEvent(event: Omit<SimulationEvent, 'id' | 'timestamp' | 'timeFormatted'>): void {
@@ -1359,6 +1379,11 @@ export class SimulationEngine {
     const v = this.state.venue;
     const agents = this.state.agents;
 
+    let approaching = 0;
+    let queuing = 0;
+    let processing = 0;
+    let admitted = 0;
+    let diverted = 0;
     let outside = 0;
     let inside = 0;
     let maxQueue = 0;
@@ -1369,7 +1394,13 @@ export class SimulationEngine {
 
     for (let i = 0; i < agents.length; i++) {
       const a = agents[i];
-      if (a.state === 'APPROACHING' || a.state === 'QUEUING') {
+      if (a.state === 'APPROACHING') approaching++;
+      else if (a.state === 'QUEUING') queuing++;
+      else if (a.state === 'PROCESSING') processing++;
+      else if (a.state === 'ADMITTED' || a.state === 'INSIDE') admitted++;
+      else if (a.state === 'DIVERTED') diverted++;
+
+      if (a.state === 'APPROACHING' || a.state === 'QUEUING' || a.state === 'PROCESSING') {
         outside++;
       } else {
         inside++;
@@ -1406,11 +1437,38 @@ export class SimulationEngine {
 
     const activeIncidents = this.state.incidents.filter((inc) => inc.status !== 'RESOLVED').length;
 
+    const totalAdmittedAcrossGates = v.gates.reduce((sum, g) => sum + (g.admittedCount || g.totalProcessedCount || 0), 0);
+    const effectiveTotalAdmitted = Math.max(admitted, totalAdmittedAcrossGates);
+
+    // Record Gate Entry Snapshot for historical tracking and charting
+    const simSecs = Math.floor(this.state.simTimeSecs);
+    const mins = Math.floor(simSecs / 60);
+    const secs = simSecs % 60;
+    const timeFormatted = `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
+
+    const gateEntriesMap: Record<string, number> = {};
+    for (const g of v.gates) {
+      gateEntriesMap[g.id] = g.admittedCount || g.totalProcessedCount || 0;
+    }
+
+    this.gateEntryHistory.push({
+      timestamp: simSecs,
+      timeFormatted,
+      gateEntries: gateEntriesMap,
+      totalAdmitted: effectiveTotalAdmitted,
+    });
+    if (this.gateEntryHistory.length > 120) {
+      this.gateEntryHistory.shift();
+    }
+
     const snapshot: SimulationMetricsSummary = {
       simTimeSecs: Math.floor(this.state.simTimeSecs),
-      totalArrived: this.nextAgentId - 1,
-      totalInside: inside * 10,
-      totalOutside: outside * 10,
+      totalArrived: this.totalGeneratedArrivals || (this.nextAgentId - 1),
+      totalInside: effectiveTotalAdmitted * 10,
+      totalOutside: (approaching + queuing + processing) * 10,
+      totalAdmitted: effectiveTotalAdmitted,
+      totalWaitingOutside: approaching + queuing,
+      totalProcessing: processing,
       totalDeparted: 0,
       totalTurnedAway: 0,
       peakQueueLength: maxQueue,
@@ -1459,5 +1517,32 @@ export class SimulationEngine {
       destinationReachedCount: 0,
     };
   }
-}
+  public getAccountingAudit() {
+    const agents = this.state.agents;
+    const approaching = agents.filter((a) => a.state === 'APPROACHING').length;
+    const queuing = agents.filter((a) => a.state === 'QUEUING').length;
+    const processing = agents.filter((a) => a.state === 'PROCESSING').length;
+    const admitted = agents.filter((a) => a.state === 'ADMITTED' || a.state === 'INSIDE').length;
+    const diverted = agents.filter((a) => a.state === 'DIVERTED').length;
+    const waitingOutside = approaching + queuing;
+    const totalGenerated = this.totalGeneratedArrivals || agents.length;
+    const sumStates = waitingOutside + processing + admitted + diverted;
 
+    return {
+      totalGenerated,
+      waitingOutside,
+      processing,
+      admitted,
+      diverted,
+      isConserved: totalGenerated === sumStates,
+    };
+  }
+
+  public getGateEntryHistory(): GateEntrySnapshot[] {
+    return this.gateEntryHistory;
+  }
+
+  public getTotalAdmittedCount(): number {
+    return this.state.venue.gates.reduce((sum, g) => sum + (g.admittedCount || g.totalProcessedCount || 0), 0);
+  }
+}

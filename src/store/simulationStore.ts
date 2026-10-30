@@ -16,6 +16,7 @@ import {
   StadiumSide,
   GateSideSimConfig,
   GateSideEvent,
+  GateEntrySnapshot,
 } from '../types';
 import { SimulationEngine } from '../engine/SimulationEngine';
 import { SpatialAnalyzer } from '../engine/SpatialAnalyzer';
@@ -73,6 +74,7 @@ interface SimulationStoreState {
   applyInitialQueue: (count: number, gateIds?: string[]) => void;
   resetGateSideSim: () => void;
   gateSideEvents: GateSideEvent[];
+  gateEntryHistory: GateEntrySnapshot[];
 
   // Scenarios & Interventions
   activeScenarioId: string;
@@ -174,6 +176,7 @@ export const useSimulationStore = create<SimulationStoreState>((set, get) => ({
     durationSecs: 300,
   },
   gateSideEvents: [],
+  gateEntryHistory: [],
 
   setSelectedGateId: (id) => {
     const { engine, gateSideConfig } = get();
@@ -559,6 +562,7 @@ export const useSimulationStore = create<SimulationStoreState>((set, get) => ({
       metricsHistory: [...st.metricsHistory],
       currentVenue: JSON.parse(JSON.stringify(st.venue)),
       gateSideEvents: [...engine.gateSideEvents],
+      gateEntryHistory: [...engine.gateEntryHistory],
     });
   },
 }));
