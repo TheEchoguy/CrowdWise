@@ -1,11 +1,20 @@
 import { create } from 'zustand';
-import { ScenarioType, TelemetryState, StadiumViewMode, StadiumSectorId, ActiveGateSector, MatchPhase } from '../types/simulation';
+import {
+  ScenarioType,
+  TelemetryState,
+  StadiumViewMode,
+  StadiumSectorId,
+  RoadSectorId,
+  AppViewMode,
+  ActiveGateSector,
+  MatchPhase
+} from '../types/simulation';
 import { calculateTimeToFillHours, calculateCrushProbabilityIndex } from '../engine/ChinnaswamyData';
 
 export interface SimulationStoreState {
   // Scenario & Simulation Parameters
   scenario: ScenarioType;
-  inflowRate: number;         // people/min (default 240)
+  inflowRate: number;         // people/min (default 360)
   gateLatency: number;        // sec/person (default 4.0)
   walkingSpeed: number;       // m/s (default 1.3)
   bafflesActive: boolean;     // default false
@@ -15,11 +24,14 @@ export interface SimulationStoreState {
   timeScale: number;          // default 1.0 (1x, 2x, etc.)
   resetSignal: number;        // incremented to trigger reset
   isModalOpen: boolean;       // default false
+  isBenchmarkOpen: boolean;   // default false
 
-  // View Mode: 'stadium' (Macro 360° Radar) vs 'gate' (Sector Micro Concourse)
+  // View Mode: 'MACRO_STADIUM' (360° Satellite CAD) vs 'SECTOR_CONCOURSE' (Micro CAD)
+  currentView: AppViewMode;
   viewMode: 'stadium' | 'gate';
   stadiumViewMode: StadiumViewMode;   // 'MACRO_VIEW' | 'MICRO_VIEW_EAST'
-  selectedSector: StadiumSectorId;    // 'EAST' | 'WEST' | 'NORTH' | 'SOUTH'
+  selectedSector: RoadSectorId | StadiumSectorId;
+  selectedRoadSector: RoadSectorId;
   activeSector: ActiveGateSector;     // 'G1-G6_EAST' | 'G7-G11_SOUTH' | 'G12-G15_WEST' | 'G16-G21_NORTH'
   activeGateSector: ActiveGateSector; // Synced alias
   matchPhase: MatchPhase;             // 'PRE_GATES' | 'METRO_PEAK' | 'ANTHEM_RUSH' | 'EGRESS'
@@ -27,6 +39,12 @@ export interface SimulationStoreState {
   overflowRerouteActive: boolean;      // Gates 4-6 Overflow Reroute
   scannerFailureActive: boolean;       // Turnstile Scanner Failure (Gate 1-2)
   stadiumSeatedCount: number;         // Actual seated patrons (out of 35,000)
+
+  // Two-Tier Turnstile & Screening Latency Controls
+  baggageScanLatency: number;         // default 3.5s, min 1.0s, max 8.0s
+  turnstileScanLatency: number;       // default 0.2s, min 0.2s, max 4.0s
+  counterFlowActive: boolean;         // default false (or 8% rejection simulation)
+  sectorTurnstileOverrides: Record<string, number>;
 
   // Dynamic Multi-Counter Scaling (Stage 3 Security Counters)
   counterCountGate1: number;          // Default 4 (min: 2, max: 10)
@@ -49,10 +67,16 @@ export interface SimulationStoreState {
   telemetry: TelemetryState;
 
   // Actions
+  setCurrentView: (view: AppViewMode) => void;
   setScenario: (scenario: ScenarioType) => void;
   setViewMode: (mode: 'stadium' | 'gate') => void;
   setStadiumViewMode: (mode: StadiumViewMode) => void;
-  setSelectedSector: (sector: StadiumSectorId) => void;
+  setSelectedSector: (sector: any) => void;
+  setBaggageScanLatency: (latency: number) => void;
+  setTurnstileScanLatency: (latency: number) => void;
+  toggleCounterFlow: () => void;
+  setCounterFlowActive: (active: boolean) => void;
+  setSectorTurnstileCount: (gateId: string, count: number) => void;
   setActiveSector: (sector: ActiveGateSector) => void;
   setActiveGateSector: (sector: ActiveGateSector) => void;
   setMatchPhase: (phase: MatchPhase) => void;
@@ -89,13 +113,15 @@ export interface SimulationStoreState {
   incrementSeatedCount: (amount: number) => void;
   setIsModalOpen: (isModalOpen: boolean) => void;
   toggleModal: () => void;
+  setIsBenchmarkOpen: (isBenchmarkOpen: boolean) => void;
+  toggleBenchmark: () => void;
   applyMitigationPreset: () => void;
 }
 
 export const useSimulationStore = create<SimulationStoreState>((set) => ({
   scenario: 'stadium',
-  inflowRate: 240,
-  gateLatency: 4.0,
+  inflowRate: 360,
+  gateLatency: 0.2,
   walkingSpeed: 1.3,
   bafflesActive: false,
   auxGateActive: false,
@@ -104,11 +130,19 @@ export const useSimulationStore = create<SimulationStoreState>((set) => ({
   timeScale: 1.0,
   resetSignal: 0,
   isModalOpen: false,
+  isBenchmarkOpen: false,
 
-  // Chinnaswamy Initial State
+  // KSCA 2-Tier Ground Truth Initial State
+  currentView: 'MACRO_STADIUM',
   viewMode: 'stadium',
   stadiumViewMode: 'MACRO_VIEW',
-  selectedSector: 'EAST',
+  selectedSector: 'LINK_ROAD',
+  selectedRoadSector: 'LINK_ROAD',
+  baggageScanLatency: 3.5,
+  turnstileScanLatency: 0.2,
+  counterFlowActive: false,
+  sectorTurnstileOverrides: {},
+
   activeSector: 'G1-G6_EAST',
   activeGateSector: 'G1-G6_EAST',
   matchPhase: 'PRE_GATES',
@@ -127,7 +161,7 @@ export const useSimulationStore = create<SimulationStoreState>((set) => ({
   gate2CounterCount: 3,
   sQueueEnabled: true,
   scannerSpeed: 0.2,
-  securityCheckSpeed: 1.0,
+  securityCheckSpeed: 3.5,
   autonomousRerouteActive: true, // Default AI Incident Commander active
 
   surgeSignal: 0,
@@ -147,7 +181,7 @@ export const useSimulationStore = create<SimulationStoreState>((set) => ({
     stadiumFillPercentage: Math.round((14200 / 35000) * 100),
     estimatedTimeToFillHours: calculateTimeToFillHours(240, 14200, 35000),
     crushProbabilityIndex: 12,
-    selectedSector: 'EAST',
+    selectedSector: 'LINK_ROAD',
     metroBurstActive: false,
     gateMetrics: {
       'gate-1': { queueCount: 0, density: 0, inflowRate: 240, capacity: 300, status: 'NORMAL' },
@@ -158,8 +192,42 @@ export const useSimulationStore = create<SimulationStoreState>((set) => ({
     activeCountersCount: 4,
     averageWaitTimeSec: 18.4,
     fastScanThroughput: 240,
-    securityCheckThroughput: 240
+    securityCheckThroughput: 240,
+    counterFlowPenaltyPercent: 0,
+    zoneADensity: 0.8,
+    zoneBDensity: 0.8,
+    displacedCrushAdvisory: null,
+    fruinLOS: 'A',
+    counterFlowActive: false
   },
+
+  setCurrentView: (currentView) =>
+    set((state) => ({
+      currentView,
+      viewMode: currentView === 'MACRO_STADIUM' ? 'stadium' : 'gate',
+      stadiumViewMode: currentView === 'MACRO_STADIUM' ? 'MACRO_VIEW' : 'MICRO_VIEW_EAST',
+      resetSignal: state.resetSignal + 1
+    })),
+
+  setBaggageScanLatency: (baggageScanLatency) =>
+    set({ baggageScanLatency, securityCheckSpeed: baggageScanLatency }),
+
+  setTurnstileScanLatency: (turnstileScanLatency) =>
+    set({ turnstileScanLatency, scannerSpeed: turnstileScanLatency, gateLatency: turnstileScanLatency }),
+
+  toggleCounterFlow: () =>
+    set((state) => ({ counterFlowActive: !state.counterFlowActive })),
+
+  setCounterFlowActive: (counterFlowActive) =>
+    set({ counterFlowActive }),
+
+  setSectorTurnstileCount: (gateId, count) =>
+    set((state) => ({
+      sectorTurnstileOverrides: {
+        ...state.sectorTurnstileOverrides,
+        [gateId]: Math.max(1, Math.min(12, count))
+      }
+    })),
 
   setScenario: (scenario) =>
     set((state) => ({
@@ -195,13 +263,22 @@ export const useSimulationStore = create<SimulationStoreState>((set) => ({
     })),
 
   setSelectedSector: (selectedSector) =>
-    set((state) => ({
-      selectedSector,
-      telemetry: {
-        ...state.telemetry,
-        selectedSector
-      }
-    })),
+    set((state) => {
+      let roadSector: RoadSectorId = 'LINK_ROAD';
+      if (selectedSector === 'CUBBON_ROAD' || selectedSector === 'NORTH') roadSector = 'CUBBON_ROAD';
+      else if (selectedSector === 'LINK_ROAD' || selectedSector === 'EAST') roadSector = 'LINK_ROAD';
+      else if (selectedSector === 'MG_ROAD' || selectedSector === 'SOUTH') roadSector = 'MG_ROAD';
+      else if (selectedSector === 'QUEENS_ROAD' || selectedSector === 'WEST') roadSector = 'QUEENS_ROAD';
+
+      return {
+        selectedSector: roadSector,
+        selectedRoadSector: roadSector,
+        telemetry: {
+          ...state.telemetry,
+          selectedSector: roadSector
+        }
+      };
+    }),
 
   setActiveSector: (activeSector) =>
     set((state) => {
@@ -473,6 +550,8 @@ export const useSimulationStore = create<SimulationStoreState>((set) => ({
 
   setIsModalOpen: (isModalOpen) => set({ isModalOpen }),
   toggleModal: () => set((state) => ({ isModalOpen: !state.isModalOpen })),
+  setIsBenchmarkOpen: (isBenchmarkOpen) => set({ isBenchmarkOpen }),
+  toggleBenchmark: () => set((state) => ({ isBenchmarkOpen: !state.isBenchmarkOpen })),
 
   /**
    * Simultaneously activates Upstream Baffles and Gates 4–6 Auxiliary Bypass

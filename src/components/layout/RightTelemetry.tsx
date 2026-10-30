@@ -325,6 +325,128 @@ export const RightTelemetry: React.FC = () => {
         )}
       </div>
 
+      {/* HURDLE AUDIT: REAL-WORLD PHYSICS (Evaluation Verification) */}
+      <div className="p-2.5 rounded-lg border border-indigo-700/60 bg-indigo-950/30 flex flex-col gap-2 shadow-sm">
+        <div className="flex items-center justify-between text-[11px] font-bold text-indigo-300 uppercase tracking-wider">
+          <div className="flex items-center gap-1.5">
+            <Sparkles className="w-3.5 h-3.5 text-indigo-400" />
+            <span>Hurdle Audit: Real-World Physics</span>
+          </div>
+          <span className="text-[9px] font-mono text-indigo-300 bg-indigo-900/60 px-1.5 py-0.5 rounded border border-indigo-700">
+            HURDLE LAB
+          </span>
+        </div>
+
+        {/* 1. Counter-Flow Friction Index */}
+        <div className="p-2 rounded bg-slate-950/80 border border-slate-800 space-y-1">
+          <div className="flex justify-between items-center text-xs">
+            <span className="text-slate-300 font-semibold flex items-center gap-1">
+              <span>Counter-Flow Friction Index</span>
+            </span>
+            <span className="font-mono text-xs font-bold text-rose-400 bg-rose-950/80 px-1.5 py-0.2 rounded border border-rose-800">
+              {telemetry.counterFlowPenaltyPercent ?? -38}% Flow Penalty
+            </span>
+          </div>
+          <p className="text-[9px] font-mono text-slate-400 leading-tight">
+            Head-on vector collision (<span className="text-amber-300">v1 · v2 &lt; -0.5</span>) exponentially amplifies lateral evasion friction, matching empirical counter-flow measurements.
+          </p>
+        </div>
+
+        {/* 2. Displaced Risk Monitor (Zone A vs Zone B) */}
+        <div className="p-2 rounded bg-slate-950/80 border border-slate-800 space-y-1.5">
+          <div className="flex items-center justify-between text-xs font-semibold text-slate-300">
+            <span>Displaced Risk Monitor</span>
+            <span className="text-[9px] font-mono text-cyan-400">DUAL-ZONE</span>
+          </div>
+          <div className="grid grid-cols-2 gap-2 text-[10px] font-mono">
+            {/* Zone A: Turnstile Throat */}
+            <div className="p-1.5 rounded bg-slate-900 border border-slate-800 flex flex-col gap-1">
+              <span className="text-slate-400 text-[8px] uppercase">Zone A: Turnstile Throat</span>
+              <div className="flex items-baseline justify-between">
+                <span className="text-sm font-bold text-slate-200">
+                  {(telemetry.zoneADensity ?? 1.2).toFixed(1)} <span className="text-[9px] font-normal text-slate-400">p/m²</span>
+                </span>
+                <span className={`text-[8px] px-1 rounded ${
+                  (telemetry.zoneADensity ?? 1.2) >= 4.5 ? 'bg-rose-950 text-rose-300' : 'bg-emerald-950 text-emerald-300'
+                }`}>
+                  {(telemetry.zoneADensity ?? 1.2) >= 4.5 ? 'CRITICAL' : 'METERED'}
+                </span>
+              </div>
+              <div className="w-full bg-slate-800 h-1 rounded-full overflow-hidden">
+                <div
+                  className={`h-full ${
+                    (telemetry.zoneADensity ?? 1.2) >= 4.5 ? 'bg-rose-500' : 'bg-emerald-500'
+                  }`}
+                  style={{ width: `${Math.min(100, ((telemetry.zoneADensity ?? 1.2) / 6.0) * 100)}%` }}
+                />
+              </div>
+            </div>
+
+            {/* Zone B: Upstream Holding Plaza */}
+            <div className="p-1.5 rounded bg-slate-900 border border-slate-800 flex flex-col gap-1">
+              <span className="text-slate-400 text-[8px] uppercase">Zone B: MG Road Plaza</span>
+              <div className="flex items-baseline justify-between">
+                <span className="text-sm font-bold text-slate-200">
+                  {(telemetry.zoneBDensity ?? 2.1).toFixed(1)} <span className="text-[9px] font-normal text-slate-400">p/m²</span>
+                </span>
+                <span className={`text-[8px] px-1 rounded ${
+                  (telemetry.zoneBDensity ?? 2.1) >= 4.5 ? 'bg-rose-950 text-rose-300 animate-pulse' : 'bg-amber-950 text-amber-300'
+                }`}>
+                  {(telemetry.zoneBDensity ?? 2.1) >= 4.5 ? 'DISPLACED CRUSH' : 'ELEVATED'}
+                </span>
+              </div>
+              <div className="w-full bg-slate-800 h-1 rounded-full overflow-hidden">
+                <div
+                  className={`h-full ${
+                    (telemetry.zoneBDensity ?? 2.1) >= 4.5 ? 'bg-rose-500 animate-pulse' : 'bg-amber-500'
+                  }`}
+                  style={{ width: `${Math.min(100, ((telemetry.zoneBDensity ?? 2.1) / 6.0) * 100)}%` }}
+                />
+              </div>
+            </div>
+          </div>
+
+          {/* Displaced Danger Warning Banner */}
+          {telemetry.displacedCrushAdvisory && (
+            <div className="p-1.5 rounded bg-rose-950/80 border border-rose-600/80 text-[10px] text-rose-200 font-mono flex items-start gap-1.5 animate-pulse">
+              <AlertTriangle className="w-3.5 h-3.5 text-rose-400 shrink-0 mt-0.5" />
+              <span>{telemetry.displacedCrushAdvisory}</span>
+            </div>
+          )}
+        </div>
+
+        {/* 3. Fruin Level of Service (LOS) Indicator */}
+        <div className="p-2 rounded bg-slate-950/80 border border-slate-800 flex items-center justify-between">
+          <div className="flex flex-col">
+            <span className="text-xs font-semibold text-slate-300 flex items-center gap-1">
+              <span>Fruin Level of Service (LOS)</span>
+            </span>
+            <span className="text-[9px] text-slate-400 font-mono">
+              v(ρ) = v₀·(1 - ρ/5.4) [Fruin 1971]
+            </span>
+          </div>
+          <div className="flex items-center gap-1.5">
+            <span
+              className={`text-xs font-extrabold px-2 py-0.5 rounded font-mono border ${
+                telemetry.fruinLOS === 'F'
+                  ? 'bg-rose-950 text-rose-300 border-rose-600 animate-pulse'
+                  : telemetry.fruinLOS === 'E'
+                  ? 'bg-orange-950 text-orange-300 border-orange-600'
+                  : telemetry.fruinLOS === 'D'
+                  ? 'bg-amber-950 text-amber-300 border-amber-600'
+                  : 'bg-emerald-950 text-emerald-300 border-emerald-600'
+              }`}
+            >
+              LOS {telemetry.fruinLOS ?? 'A'} ({
+                telemetry.fruinLOS === 'F' ? 'Jam' :
+                telemetry.fruinLOS === 'E' ? 'Shuffling' :
+                telemetry.fruinLOS === 'D' ? 'Restricted' : 'Free'
+              })
+            </span>
+          </div>
+        </div>
+      </div>
+
       {/* 3. Interactive Simulate 500-Person Burst Rush Button */}
       <button
         onClick={() => triggerBurstRush(500)}

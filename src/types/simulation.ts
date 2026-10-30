@@ -72,6 +72,13 @@ export interface AgentData {
   active?: boolean;
   compressivePressure: number; // Force accumulated from rear agents pushing (Phase 2)
   assignedSector?: 'EAST' | 'WEST' | 'NORTH' | 'SOUTH';
+  sectorRoad?: RoadSectorId;
+  targetOuterGate?: string;
+  targetInnerGate?: string;
+  isRejected?: boolean;
+  isVipMedia?: boolean;
+  friskingRemaining?: number;
+  turnstileScanRemaining?: number;
 
   // Active Incident Mitigation Extensions:
   waypoints?: { x: number; y: number }[];
@@ -89,6 +96,8 @@ export interface AgentData {
 
 export type StadiumViewMode = 'MACRO_VIEW' | 'MICRO_VIEW_EAST';
 export type StadiumSectorId = 'EAST' | 'WEST' | 'NORTH' | 'SOUTH';
+export type RoadSectorId = 'CUBBON_ROAD' | 'LINK_ROAD' | 'MG_ROAD' | 'QUEENS_ROAD';
+export type AppViewMode = 'MACRO_STADIUM' | 'SECTOR_CONCOURSE';
 export type ActiveGateSector = 'G1-G6_EAST' | 'G7-G11_SOUTH' | 'G12-G15_WEST' | 'G16-G21_NORTH';
 export type MatchPhase = 'PRE_GATES' | 'METRO_PEAK' | 'ANTHEM_RUSH' | 'EGRESS';
 
@@ -128,7 +137,7 @@ export interface TelemetryState {
   stadiumFillPercentage: number;                      // 0 - 100% capacity filled
   estimatedTimeToFillHours: number;                   // Hours until 35,000 capacity
   crushProbabilityIndex: number;                      // 0 to 100% composite crush index
-  selectedSector: 'EAST' | 'WEST' | 'NORTH' | 'SOUTH';
+  selectedSector: StadiumSectorId | RoadSectorId;
   metroBurstActive: boolean;                          // Namma Metro mass transit pulse indicator
 
   // Active Incident Mitigation Metrics:
@@ -141,6 +150,14 @@ export interface TelemetryState {
   averageWaitTimeSec: number;
   fastScanThroughput: number;
   securityCheckThroughput: number;
+
+  // Real-World Physics Hurdle Audit Metrics:
+  counterFlowPenaltyPercent: number;                  // Throughput penalty (e.g. -38% due to reverse flow)
+  zoneADensity: number;                               // Turnstile throat density (p/m²)
+  zoneBDensity: number;                               // Upstream holding plaza / roadway density (p/m²)
+  displacedCrushAdvisory: string | null;              // Warning if metering moves danger upstream
+  fruinLOS: 'A' | 'B' | 'C' | 'D' | 'E' | 'F';         // Fruin Level of Service (1971)
+  counterFlowActive: boolean;                         // True if reverse stream active
 }
 
 export type ScenarioType = 'stadium' | 'bridge' | 'reversal';

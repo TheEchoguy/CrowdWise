@@ -1,10 +1,11 @@
 import React from 'react';
 import { useSimulationStore } from '../../state/useSimulationStore';
-import { ShieldAlert, FileText, WifiOff, Users, Activity } from 'lucide-react';
+import { ShieldAlert, FileText, WifiOff, Users, Activity, Cpu } from 'lucide-react';
 
 export const Header: React.FC = () => {
   const telemetry = useSimulationStore((s) => s.telemetry);
   const toggleModal = useSimulationStore((s) => s.toggleModal);
+  const toggleBenchmark = useSimulationStore((s) => s.toggleBenchmark);
 
   return (
     <header className="flex flex-col sm:flex-row items-center justify-between gap-3 px-5 py-3 bg-slate-900/90 border-b border-slate-800 backdrop-blur-md">
@@ -55,6 +56,16 @@ export const Header: React.FC = () => {
             <span>CRITICAL CRUSH RISK</span>
           </div>
         )}
+
+        {/* Physics Benchmark Modal Trigger */}
+        <button
+          onClick={toggleBenchmark}
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-cyan-700/80 bg-cyan-950/70 hover:bg-cyan-900/80 text-cyan-300 font-bold text-xs shadow-md transition"
+          title="Run 1k, 5k, 10k Pure Social Force Engine Benchmark"
+        >
+          <Cpu className="w-3.5 h-3.5" />
+          <span>Benchmark</span>
+        </button>
 
         {/* Export Safety Brief Modal Trigger */}
         <button
