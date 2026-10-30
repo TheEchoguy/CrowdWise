@@ -20,6 +20,8 @@ export const SimulationCanvas: React.FC = () => {
   const isPaused = useSimulationStore((s) => s.isPaused);
   const timeScale = useSimulationStore((s) => s.timeScale);
   const resetSignal = useSimulationStore((s) => s.resetSignal);
+  const surgeSignal = useSimulationStore((s) => s.surgeSignal);
+  const surgeCount = useSimulationStore((s) => s.surgeCount);
   const setTelemetry = useSimulationStore((s) => s.setTelemetry);
 
   // Mutable Physics References across animation frames
@@ -32,8 +34,9 @@ export const SimulationCanvas: React.FC = () => {
   const gatesRef = useRef<Gate[]>([]);
   const bafflesRef = useRef<Wall[]>([]);
 
-  // Telemetry Throttle References
+  // Telemetry Throttle References & Moving Window
   const lastTelemetryDispatchRef = useRef<number>(0);
+  const densityHistoryRef = useRef<{ time: number; density: number }[]>([]);
   const fpsWindowRef = useRef<number[]>([]);
   const lastTimeRef = useRef<number>(performance.now());
   const flashTimerRef = useRef<number>(0);
@@ -61,6 +64,7 @@ export const SimulationCanvas: React.FC = () => {
     nextIdRef.current = 1;
     spawnAccRef.current = 0;
     throughputHistoryRef.current = [];
+    densityHistoryRef.current = [];
 
     const initialCount = scenario === 'stadium' ? 45 : scenario === 'bridge' ? 50 : 40;
     seedInitialAgents(initialCount);
@@ -72,7 +76,7 @@ export const SimulationCanvas: React.FC = () => {
     }
   };
 
-  const spawnNewAgent = () => {
+  const spawnNewAgent = (overrideSpeedMultiplier = 1.0) => {
     const id = nextIdRef.current++;
     const radius = 5.0 + Math.random() * 1.0; // ~0.5m pedestrian diameter
 
@@ -133,17 +137,70 @@ export const SimulationCanvas: React.FC = () => {
       stuckTime: 0,
       color: '#10b981',
       isReverse,
-      desiredSpeed: walkingSpeed * (0.9 + Math.random() * 0.2),
+      desiredSpeed: walkingSpeed * (0.9 + Math.random() * 0.2) * overrideSpeedMultiplier,
+      compressivePressure: 0,
       active: true
     };
 
     agentsRef.current.push(agent);
   };
 
+  /**
+   * Phase 2: Injects a dense synthetic surge wave cluster into the ingress avenue
+   */
+  const triggerSurgeWave = (count: number) => {
+    const rows = Math.ceil(count / 12);
+    for (let r = 0; r < rows; r++) {
+      for (let c = 0; c < 12; c++) {
+        if (r * 12 + c >= count) break;
+        const id = nextIdRef.current++;
+        const radius = 5.0 + Math.random() * 1.0;
+
+        // Wavefront cluster in lower concourse with parabolic curvature
+        const colFraction = c / 11;
+        const x = 90 + colFraction * (CANVAS_WIDTH - 180);
+        // Curvature offset simulating natural crowd surge wavefront
+        const curveOffset = Math.sin(colFraction * Math.PI) * 22;
+        const y = CANVAS_HEIGHT - 35 - r * 14 - curveOffset;
+
+        let targetX = CANVAS_WIDTH / 2;
+        const targetY = 60;
+        if (auxGateActive && (x > CANVAS_WIDTH * 0.55 || id % 2 === 0)) {
+          targetX = CANVAS_WIDTH * 0.8;
+        }
+
+        const agent: AgentData = {
+          id,
+          x,
+          y,
+          vx: (Math.random() - 0.5) * 3,
+          vy: -8 - Math.random() * 5, // Immediate forward impulse
+          radius,
+          targetX,
+          targetY,
+          density: 3.5,
+          stuckTime: 0,
+          color: '#f59e0b',
+          desiredSpeed: walkingSpeed * 1.35, // Rush speed
+          compressivePressure: 15,
+          active: true
+        };
+        agentsRef.current.push(agent);
+      }
+    }
+  };
+
   // Re-sync geometry when scenario or resetSignal changes
   useEffect(() => {
     initSimulation();
   }, [scenario, resetSignal]);
+
+  // Phase 2: Listen to surge signal from store
+  useEffect(() => {
+    if (surgeSignal > 0) {
+      triggerSurgeWave(surgeCount || 45);
+    }
+  }, [surgeSignal]);
 
   // Sync toggles with existing geometry without clearing crowd
   useEffect(() => {
@@ -230,7 +287,7 @@ export const SimulationCanvas: React.FC = () => {
           }
         }
 
-        // 3. Social Force Crowd Interactions O(N)
+        // 3. Social Force Crowd Interactions O(N) with Compressive Back-Propagation
         calculateCrowdInteractions(
           agentsRef.current,
           spatialGridRef.current,
@@ -297,6 +354,42 @@ export const SimulationCanvas: React.FC = () => {
         throughputHistoryRef.current = throughputHistoryRef.current.filter((t) => t >= oneMinuteAgo);
       }
 
+      // Track Density History over a 2-second moving window for Time to Turbulence
+      densityHistoryRef.current.push({ time: currentTime, density: peakDensity });
+      const twoSecondsAgo = currentTime - 2000;
+      densityHistoryRef.current = densityHistoryRef.current.filter((d) => d.time >= twoSecondsAgo);
+
+      // Phase 2: Calculate dDensity/dt and timeToTurbulence
+      let timeToTurbulence: number | null = null;
+      let densityTrend: 'rising' | 'stable' | 'clearing' = 'stable';
+
+      if (densityHistoryRef.current.length >= 2) {
+        const oldest = densityHistoryRef.current[0];
+        const newest = densityHistoryRef.current[densityHistoryRef.current.length - 1];
+        const dtSeconds = (newest.time - oldest.time) / 1000;
+
+        if (dtSeconds >= 0.5) {
+          const deltaDensity = newest.density - oldest.density;
+          const dDensityDt = deltaDensity / dtSeconds;
+
+          if (dDensityDt > 0.25) {
+            densityTrend = 'rising';
+          } else if (dDensityDt < -0.25) {
+            densityTrend = 'clearing';
+          } else {
+            densityTrend = 'stable';
+          }
+
+          // If dDensity/dt > 0.5 and density > 3.0, compute seconds to reach 5.0 p/m²
+          if (dDensityDt > 0.5 && peakDensity > 3.0 && peakDensity < 5.0) {
+            const gap = 5.0 - peakDensity;
+            timeToTurbulence = Math.max(0.5, Math.round((gap / dDensityDt) * 10) / 10);
+          } else if (peakDensity >= 5.0) {
+            timeToTurbulence = 0.0;
+          }
+        }
+      }
+
       // 5. Dispatch Telemetry at 4 Hz (every 250ms)
       if (currentTime - lastTelemetryDispatchRef.current >= 250) {
         lastTelemetryDispatchRef.current = currentTime;
@@ -306,7 +399,15 @@ export const SimulationCanvas: React.FC = () => {
           throughputPerMin: throughputHistoryRef.current.length,
           liveAgents: agentsRef.current.length,
           fps: currentFps,
-          isCritical: peakDensity >= 5.0
+          isCritical: peakDensity >= 5.0,
+          timeToTurbulence,
+          densityTrend,
+          activeArrivalProfile:
+            scenario === 'reversal'
+              ? 'reversal'
+              : surgeSignal > 0 && currentTime - (densityHistoryRef.current[0]?.time || 0) < 5000
+              ? 'burst'
+              : 'steady'
         });
       }
 
@@ -329,11 +430,12 @@ export const SimulationCanvas: React.FC = () => {
     walkingSpeed,
     scenario,
     auxGateActive,
+    surgeSignal,
     setTelemetry
   ]);
 
   /**
-   * Sub-pixel Canvas Rendering Pipeline
+   * Sub-pixel Canvas Rendering Pipeline with Phase 2 Vector Trails & Pressure Halos
    */
   const drawFrame = (ctx: CanvasRenderingContext2D, currentTime: number, isFlashTick: boolean) => {
     // Background Dark Slate
@@ -471,13 +573,44 @@ export const SimulationCanvas: React.FC = () => {
       ctx.restore();
     }
 
-    // Draw Agents
+    // Draw Agents with Vector Trails & Compressive Pressure Visualization (Phase 2)
     const agents = agentsRef.current;
     const len = agents.length;
+
     for (let i = 0; i < len; i++) {
       const a = agents[i];
       if (a.active === false) continue;
 
+      const speed = Math.hypot(a.vx, a.vy);
+
+      // Phase 2: Subtle Velocity Vector Trails under motion or high friction
+      if (speed > 1.2 || a.density >= 2.5) {
+        ctx.save();
+        const normVx = a.vx / (speed || 1);
+        const normVy = a.vy / (speed || 1);
+        const trailLength = Math.min(14, speed * 0.7);
+
+        ctx.strokeStyle = a.density >= 5.0 ? 'rgba(244, 63, 94, 0.35)' : a.density >= 2.5 ? 'rgba(245, 158, 11, 0.25)' : 'rgba(16, 185, 129, 0.2)';
+        ctx.lineWidth = 1.2;
+        ctx.beginPath();
+        ctx.moveTo(a.x, a.y);
+        ctx.lineTo(a.x - normVx * trailLength, a.y - normVy * trailLength);
+        ctx.stroke();
+        ctx.restore();
+      }
+
+      // Phase 2: Compressive Shockwave Ripple if rear pressure accumulated
+      if (a.compressivePressure && a.compressivePressure > 12) {
+        ctx.save();
+        ctx.beginPath();
+        ctx.arc(a.x, a.y, a.radius * 1.8, 0, Math.PI * 2);
+        ctx.strokeStyle = 'rgba(249, 115, 22, 0.4)';
+        ctx.lineWidth = 1.2;
+        ctx.stroke();
+        ctx.restore();
+      }
+
+      // Agent Body Circle
       ctx.beginPath();
       ctx.arc(a.x, a.y, a.radius, 0, Math.PI * 2);
       ctx.fillStyle = a.color;
@@ -487,19 +620,18 @@ export const SimulationCanvas: React.FC = () => {
       if (a.density >= 5.0 && isFlashTick) {
         ctx.save();
         ctx.beginPath();
-        ctx.arc(a.x, a.y, a.radius * 2.2, 0, Math.PI * 2);
-        ctx.strokeStyle = 'rgba(244, 63, 94, 0.7)';
-        ctx.lineWidth = 1.5;
+        ctx.arc(a.x, a.y, a.radius * 2.3, 0, Math.PI * 2);
+        ctx.strokeStyle = 'rgba(244, 63, 94, 0.8)';
+        ctx.lineWidth = 1.8;
         ctx.stroke();
         ctx.restore();
       }
 
-      // Velocity directional indicator
-      const speed = Math.hypot(a.vx, a.vy);
+      // Directional tip pointer
       if (speed > 1.0) {
         ctx.beginPath();
         ctx.moveTo(a.x, a.y);
-        ctx.lineTo(a.x + (a.vx / speed) * (a.radius + 3), a.y + (a.vy / speed) * (a.radius + 3));
+        ctx.lineTo(a.x + (a.vx / speed) * (a.radius + 3.5), a.y + (a.vy / speed) * (a.radius + 3.5));
         ctx.strokeStyle = '#0f172a';
         ctx.lineWidth = 1.2;
         ctx.stroke();
@@ -518,7 +650,7 @@ export const SimulationCanvas: React.FC = () => {
     ctx.moveTo(sbX, sbY);
     ctx.lineTo(sbX + sbLen, sbY);
     ctx.moveTo(sbX, sbY - 4);
-    ctx.lineTo(sbX, sbY + 4);
+    ctx.lineTo(sbX + sbLen, sbY + 4);
     ctx.moveTo(sbX + sbLen, sbY - 4);
     ctx.lineTo(sbX + sbLen, sbY + 4);
     ctx.stroke();
@@ -543,4 +675,3 @@ export const SimulationCanvas: React.FC = () => {
     </div>
   );
 };
-

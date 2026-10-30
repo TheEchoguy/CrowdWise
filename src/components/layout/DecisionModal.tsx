@@ -98,7 +98,7 @@ export const DecisionModal: React.FC = () => {
             <h3 className="text-xs font-bold uppercase tracking-wider text-slate-200 mb-2.5">
               1. Observed Dynamic Telemetry Profile
             </h3>
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 font-mono">
+            <div className="grid grid-cols-2 sm:grid-cols-6 gap-2.5 font-mono">
               <div className="p-3 rounded-lg bg-slate-950 border border-slate-800">
                 <span className="text-[10px] text-slate-400 block uppercase">Peak Density</span>
                 <span className={`text-xl font-bold ${telemetry.isCritical ? 'text-rose-400' : 'text-emerald-400'}`}>
@@ -112,7 +112,7 @@ export const DecisionModal: React.FC = () => {
                 <span className="text-xl font-bold text-cyan-400">
                   {telemetry.spillbackMeters.toFixed(1)}m
                 </span>
-                <span className="text-[10px] text-slate-500 block">Upstream queue reach</span>
+                <span className="text-[10px] text-slate-500 block">Upstream reach</span>
               </div>
 
               <div className="p-3 rounded-lg bg-slate-950 border border-slate-800">
@@ -120,7 +120,7 @@ export const DecisionModal: React.FC = () => {
                 <span className="text-xl font-bold text-emerald-400">
                   {telemetry.throughputPerMin} p/min
                 </span>
-                <span className="text-[10px] text-slate-500 block">Rolling clearance</span>
+                <span className="text-[10px] text-slate-500 block">Turnstile egress</span>
               </div>
 
               <div className="p-3 rounded-lg bg-slate-950 border border-slate-800">
@@ -129,6 +129,22 @@ export const DecisionModal: React.FC = () => {
                   {telemetry.liveAgents}
                 </span>
                 <span className="text-[10px] text-slate-500 block">Concourse load</span>
+              </div>
+
+              <div className="p-3 rounded-lg bg-slate-950 border border-slate-800">
+                <span className="text-[10px] text-slate-400 block uppercase">Turbulence Forecast</span>
+                <span className={`text-xl font-bold ${telemetry.timeToTurbulence !== null && telemetry.timeToTurbulence <= 5.0 ? 'text-rose-400' : 'text-emerald-400'}`}>
+                  {telemetry.timeToTurbulence !== null ? `${telemetry.timeToTurbulence.toFixed(1)}s` : 'STABLE'}
+                </span>
+                <span className="text-[10px] text-slate-500 block">Time to &ge;5.0 p/m²</span>
+              </div>
+
+              <div className="p-3 rounded-lg bg-slate-950 border border-slate-800">
+                <span className="text-[10px] text-slate-400 block uppercase">Density Trend</span>
+                <span className={`text-xl font-bold uppercase ${telemetry.densityTrend === 'rising' ? 'text-rose-400' : telemetry.densityTrend === 'clearing' ? 'text-emerald-400' : 'text-slate-400'}`}>
+                  {telemetry.densityTrend}
+                </span>
+                <span className="text-[10px] text-slate-500 block">2s window delta</span>
               </div>
             </div>
           </div>
@@ -142,6 +158,10 @@ export const DecisionModal: React.FC = () => {
               <div className="flex justify-between">
                 <span className="text-slate-400">Scenario Preset:</span>
                 <span className="text-slate-200 uppercase font-bold">{scenario}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-slate-400">Active Arrival Profile:</span>
+                <span className="text-cyan-400 uppercase font-bold">{telemetry.activeArrivalProfile || 'STEADY'}</span>
               </div>
               <div className="flex justify-between">
                 <span className="text-slate-400">Synthetic Inflow Rate:</span>
@@ -236,4 +256,3 @@ export const DecisionModal: React.FC = () => {
     </div>
   );
 };
-

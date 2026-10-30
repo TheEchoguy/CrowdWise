@@ -1,6 +1,18 @@
 import React from 'react';
 import { useSimulationStore } from '../../state/useSimulationStore';
-import { Activity, ArrowRightCircle, Gauge, AlertTriangle, ShieldCheck, Sparkles, CheckCircle2 } from 'lucide-react';
+import {
+  Activity,
+  ArrowRightCircle,
+  Gauge,
+  ShieldCheck,
+  Sparkles,
+  CheckCircle2,
+  Clock,
+  TrendingUp,
+  TrendingDown,
+  Minus,
+  Waves
+} from 'lucide-react';
 
 export const RightTelemetry: React.FC = () => {
   const telemetry = useSimulationStore((s) => s.telemetry);
@@ -38,6 +50,7 @@ export const RightTelemetry: React.FC = () => {
 
   return (
     <div className="flex flex-col gap-3.5 p-3.5 bg-slate-900/90 border border-slate-800 rounded-xl backdrop-blur-md text-slate-200 h-full overflow-y-auto">
+      {/* Telemetry Header with Dynamic Arrival Profile Pill */}
       <div className="flex items-center justify-between pb-2 border-b border-slate-800">
         <div className="flex items-center gap-1.5">
           <Activity className="w-4 h-4 text-cyan-400" />
@@ -45,20 +58,36 @@ export const RightTelemetry: React.FC = () => {
             Real-Time Telemetry
           </h2>
         </div>
-        <span className="text-[10px] font-mono text-slate-400 bg-slate-950 px-2 py-0.5 rounded border border-slate-800">
-          4 Hz POLLING
-        </span>
+        <div className="flex items-center gap-1.5">
+          <span className="text-[10px] font-mono text-cyan-400 bg-slate-950 px-2 py-0.5 rounded border border-slate-800 flex items-center gap-1">
+            <Waves className="w-3 h-3 text-cyan-400" />
+            <span className="uppercase font-bold">{telemetry.activeArrivalProfile || 'STEADY'}</span>
+          </span>
+        </div>
       </div>
 
-      {/* 1. Peak Local Density Gauge */}
+      {/* 1. Peak Local Density Gauge with Trend */}
       <div className={`p-3 rounded-lg border flex flex-col gap-2 transition ${densityBadgeBorder}`}>
         <div className="flex items-center justify-between text-xs font-bold uppercase tracking-wider text-slate-300">
           <span>Peak Local Density</span>
-          {telemetry.isCritical ? (
-            <AlertTriangle className="w-4 h-4 text-rose-400 animate-bounce" />
-          ) : (
-            <Activity className="w-4 h-4 text-slate-400" />
-          )}
+          <div className="flex items-center gap-1 font-mono text-[10px]">
+            {telemetry.densityTrend === 'rising' ? (
+              <span className="text-rose-400 flex items-center gap-0.5">
+                <TrendingUp className="w-3.5 h-3.5" />
+                <span>RISING</span>
+              </span>
+            ) : telemetry.densityTrend === 'clearing' ? (
+              <span className="text-emerald-400 flex items-center gap-0.5">
+                <TrendingDown className="w-3.5 h-3.5" />
+                <span>CLEARING</span>
+              </span>
+            ) : (
+              <span className="text-slate-400 flex items-center gap-0.5">
+                <Minus className="w-3.5 h-3.5" />
+                <span>STABLE</span>
+              </span>
+            )}
+          </div>
         </div>
 
         <div className="flex items-baseline justify-between">
@@ -88,50 +117,73 @@ export const RightTelemetry: React.FC = () => {
         </div>
       </div>
 
-      {/* 2. Queue Spillback Distance */}
+      {/* 2. Phase 2: Predictive Time to Turbulence Gauge */}
       <div className="p-3 rounded-lg border border-slate-800 bg-slate-950/60 flex flex-col gap-1.5">
         <div className="flex items-center justify-between text-xs font-semibold text-slate-400 uppercase tracking-wider">
-          <span>Queue Spillback Distance</span>
-          <ArrowRightCircle className="w-4 h-4 text-cyan-400" />
+          <span className="flex items-center gap-1">
+            <Clock className="w-3.5 h-3.5 text-amber-400" />
+            <span>Time to Turbulence</span>
+          </span>
+          <span className="text-[10px] font-mono text-slate-500">2s MOVING WINDOW</span>
         </div>
 
         <div className="flex items-baseline justify-between">
           <div>
-            <span className="text-2xl font-extrabold font-mono text-cyan-400">
-              {telemetry.spillbackMeters.toFixed(1)}
-            </span>
-            <span className="text-xs ml-1.5 font-mono text-slate-400">meters</span>
+            {telemetry.timeToTurbulence !== null ? (
+              <>
+                <span className={`text-2xl font-extrabold font-mono ${telemetry.timeToTurbulence <= 5.0 ? 'text-rose-400 animate-pulse' : 'text-amber-400'}`}>
+                  {telemetry.timeToTurbulence.toFixed(1)}
+                </span>
+                <span className="text-xs ml-1.5 font-mono text-slate-400">sec to &ge; 5.0 p/m²</span>
+              </>
+            ) : (
+              <span className="text-sm font-bold font-mono text-emerald-400">
+                SAFE &bull; NO SURGE DETECTED
+              </span>
+            )}
           </div>
-          <span className="text-[10px] font-mono text-slate-400">
-            {telemetry.spillbackMeters > 20 ? 'CRITICAL SPILLBACK' : 'NORMAL BUFFER'}
-          </span>
+          {telemetry.timeToTurbulence !== null && (
+            <span className={`text-[10px] font-mono font-bold uppercase px-1.5 py-0.5 rounded ${
+              telemetry.timeToTurbulence <= 3.0 ? 'bg-rose-950 border border-rose-700 text-rose-300' : 'bg-amber-950 border border-amber-700 text-amber-300'
+            }`}>
+              {telemetry.timeToTurbulence <= 0 ? 'CRUSH IMPACT NOW' : 'CRUSH IMMINENT'}
+            </span>
+          )}
         </div>
         <p className="text-[10px] text-slate-500 leading-tight">
-          Upstream queue propagation into public concourse & perimeter street.
+          Calculates second derivatives dDensity/dt to forecast compressive shockwave onset.
         </p>
       </div>
 
-      {/* 3. Flow Clearance Throughput */}
-      <div className="p-3 rounded-lg border border-slate-800 bg-slate-950/60 flex flex-col gap-1.5">
-        <div className="flex items-center justify-between text-xs font-semibold text-slate-400 uppercase tracking-wider">
-          <span>Clearance Throughput</span>
-          <Gauge className="w-4 h-4 text-emerald-400" />
+      {/* 3. Queue Spillback Distance & Throughput Grid */}
+      <div className="grid grid-cols-2 gap-2">
+        <div className="p-2.5 rounded-lg border border-slate-800 bg-slate-950/60 flex flex-col justify-between">
+          <div className="flex items-center justify-between text-[11px] font-semibold text-slate-400 uppercase">
+            <span>Spillback</span>
+            <ArrowRightCircle className="w-3.5 h-3.5 text-cyan-400" />
+          </div>
+          <div className="my-1">
+            <span className="text-xl font-bold font-mono text-cyan-400">
+              {telemetry.spillbackMeters.toFixed(1)}
+            </span>
+            <span className="text-[10px] ml-1 font-mono text-slate-400">m</span>
+          </div>
+          <div className="text-[9px] text-slate-500 font-mono">Concourse queue</div>
         </div>
 
-        <div className="flex items-baseline justify-between">
-          <div>
-            <span className="text-2xl font-extrabold font-mono text-emerald-400">
+        <div className="p-2.5 rounded-lg border border-slate-800 bg-slate-950/60 flex flex-col justify-between">
+          <div className="flex items-center justify-between text-[11px] font-semibold text-slate-400 uppercase">
+            <span>Throughput</span>
+            <Gauge className="w-3.5 h-3.5 text-emerald-400" />
+          </div>
+          <div className="my-1">
+            <span className="text-xl font-bold font-mono text-emerald-400">
               {telemetry.throughputPerMin}
             </span>
-            <span className="text-xs ml-1.5 font-mono text-slate-400">p/min</span>
+            <span className="text-[10px] ml-1 font-mono text-slate-400">p/min</span>
           </div>
-          <span className="text-[10px] font-mono text-slate-400">
-            TURNSTILE FLOW
-          </span>
+          <div className="text-[9px] text-slate-500 font-mono">Turnstile flow</div>
         </div>
-        <p className="text-[10px] text-slate-500 leading-tight">
-          Live rate of pedestrians processed through active turnstiles in the rolling 60s.
-        </p>
       </div>
 
       {/* 4. Side-by-Side Baseline vs. Mitigated Decision Card */}
@@ -188,4 +240,3 @@ export const RightTelemetry: React.FC = () => {
     </div>
   );
 };
-

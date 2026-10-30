@@ -15,6 +15,10 @@ export interface SimulationStoreState {
   resetSignal: number;        // incremented to trigger reset
   isModalOpen: boolean;       // default false
 
+  // Phase 2 Surge Wave Trigger
+  surgeSignal: number;
+  surgeCount: number;
+
   // Live Telemetry
   telemetry: TelemetryState;
 
@@ -33,6 +37,7 @@ export interface SimulationStoreState {
   togglePause: () => void;
   setTimeScale: (timeScale: number) => void;
   triggerReset: () => void;
+  triggerSurgeWave: (count?: number) => void;
   setTelemetry: (telemetry: Partial<TelemetryState>) => void;
   setIsModalOpen: (isModalOpen: boolean) => void;
   toggleModal: () => void;
@@ -52,13 +57,19 @@ export const useSimulationStore = create<SimulationStoreState>((set) => ({
   resetSignal: 0,
   isModalOpen: false,
 
+  surgeSignal: 0,
+  surgeCount: 40,
+
   telemetry: {
     peakDensity: 0,
     spillbackMeters: 0,
     throughputPerMin: 0,
     liveAgents: 0,
     fps: 60,
-    isCritical: false
+    isCritical: false,
+    timeToTurbulence: null,
+    densityTrend: 'stable',
+    activeArrivalProfile: 'steady'
   },
 
   setScenario: (scenario) =>
@@ -67,7 +78,13 @@ export const useSimulationStore = create<SimulationStoreState>((set) => ({
       dividerActive: scenario === 'bridge',
       bafflesActive: false,
       auxGateActive: false,
-      resetSignal: state.resetSignal + 1
+      resetSignal: state.resetSignal + 1,
+      telemetry: {
+        ...state.telemetry,
+        activeArrivalProfile: scenario === 'reversal' ? 'reversal' : 'steady',
+        timeToTurbulence: null,
+        densityTrend: 'stable'
+      }
     })),
 
   setInflowRate: (inflowRate) => set({ inflowRate: Math.max(30, Math.min(600, inflowRate)) }),
@@ -89,6 +106,16 @@ export const useSimulationStore = create<SimulationStoreState>((set) => ({
   setTimeScale: (timeScale) => set({ timeScale }),
 
   triggerReset: () => set((state) => ({ resetSignal: state.resetSignal + 1 })),
+
+  triggerSurgeWave: (count = 45) =>
+    set((state) => ({
+      surgeSignal: state.surgeSignal + 1,
+      surgeCount: count,
+      telemetry: {
+        ...state.telemetry,
+        activeArrivalProfile: 'burst'
+      }
+    })),
 
   setTelemetry: (data) =>
     set((state) => ({
@@ -114,4 +141,3 @@ export const useSimulationStore = create<SimulationStoreState>((set) => ({
       };
     })
 }));
-

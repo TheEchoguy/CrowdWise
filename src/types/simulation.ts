@@ -1,6 +1,6 @@
 /**
  * CROWDWISE Predictive Crowd Digital Twin & Safety Lab
- * Foundational Phase 1 Simulation Type Definitions
+ * Phase 2 Upgraded Simulation Type Definitions
  */
 
 export interface Wall {
@@ -43,15 +43,19 @@ export interface AgentData {
   desiredSpeed?: number;
   maxSpeed?: number;
   active?: boolean;
+  compressivePressure: number; // Force accumulated from rear agents pushing (Phase 2)
 }
 
 export interface TelemetryState {
-  peakDensity: number;      // Maximum local density (p/m²)
-  spillbackMeters: number;  // Queue spillback from primary bottleneck (meters)
-  throughputPerMin: number; // Clearances per minute
-  liveAgents: number;       // Active pedestrians on map
-  fps: number;              // Rendering/physics frame rate
-  isCritical: boolean;      // True when peakDensity >= 5.0
+  peakDensity: number;                                // Maximum local density (p/m²)
+  spillbackMeters: number;                            // Queue spillback from primary bottleneck (meters)
+  throughputPerMin: number;                           // Clearances per minute
+  liveAgents: number;                                 // Active pedestrians on map
+  fps: number;                                        // Rendering/physics frame rate
+  isCritical: boolean;                                // True when peakDensity >= 5.0
+  timeToTurbulence: number | null;                    // Estimated seconds until density exceeds 5.0 p/m² (Phase 2)
+  densityTrend: 'rising' | 'stable' | 'clearing';      // Real-time density trend (Phase 2)
+  activeArrivalProfile: 'steady' | 'burst' | 'reversal'; // Synthetic arrival mode (Phase 2)
 }
 
 export type ScenarioType = 'stadium' | 'bridge' | 'reversal';
@@ -61,4 +65,3 @@ export interface ScenarioGeometry {
   gates: Gate[];
   baffles: Wall[];
 }
-

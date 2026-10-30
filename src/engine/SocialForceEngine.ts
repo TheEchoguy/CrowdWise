@@ -35,6 +35,7 @@ export function closestPointOnSegment(
  * - Driving force towards target F_target = (v_desired - v_actual) / tau (tau = 0.5s)
  * - Boundary & obstacle repulsion with exponential pushback
  * - Non-linear velocity decay as local density exceeds 4.0 agents/m²
+ * - Subtle jitter/sway vector under high friction (>4.5 p/m²) simulating crowd turbulence
  */
 export function updateAgentPhysics(
   agent: AgentData,
@@ -57,9 +58,11 @@ export function updateAgentPhysics(
   const dy = agent.targetY - agent.y;
   const distToTarget = Math.hypot(dx, dy);
 
+  let dirX = 0;
+  let dirY = 0;
   if (distToTarget > 1.0) {
-    const dirX = dx / distToTarget;
-    const dirY = dy / distToTarget;
+    dirX = dx / distToTarget;
+    dirY = dy / distToTarget;
     const vDesiredX = desiredSpeedPx * dirX;
     const vDesiredY = desiredSpeedPx * dirY;
 
@@ -106,7 +109,19 @@ export function updateAgentPhysics(
   agent.vx += fx * dt;
   agent.vy += fy * dt;
 
-  // 4. Non-Linear Viscosity Decay beyond 4.0 agents/m² (Fluid freezing & shockwave)
+  // 4. Subtle Jitter / Sway Vector for agents experiencing > 4.5 p/m² (Crowd Turbulence / Quake)
+  if (agent.density > 4.5 && distToTarget > 1.0) {
+    const lateralX = -dirY;
+    const lateralY = dirX;
+    const excess = agent.density - 4.5;
+    // Oscillatory sway with pseudo-random high frequency jitter
+    const timeTick = performance.now() * 0.006;
+    const swayAmp = (Math.sin(agent.id * 9.17 + timeTick) * 2.2 + (Math.random() - 0.5) * 1.8) * excess * 12;
+    agent.vx += lateralX * swayAmp * dt;
+    agent.vy += lateralY * swayAmp * dt;
+  }
+
+  // 5. Non-Linear Viscosity Decay beyond 4.0 agents/m² (Fluid freezing & shockwave)
   if (agent.density > 4.0) {
     const excess = agent.density - 4.0;
     const viscosityDecay = 1.0 / (1.0 + 0.65 * Math.pow(excess, 1.8));
@@ -114,7 +129,7 @@ export function updateAgentPhysics(
     agent.vy *= Math.max(0.03, viscosityDecay);
   }
 
-  // 5. Max Speed Clamp
+  // 6. Max Speed Clamp
   const currentSpeed = Math.hypot(agent.vx, agent.vy);
   const maxAllowedSpeed = desiredSpeedPx * 1.55;
   if (currentSpeed > maxAllowedSpeed) {
@@ -123,20 +138,23 @@ export function updateAgentPhysics(
     agent.vy *= scale;
   }
 
-  // 6. Position Integration
+  // 7. Position Integration
   agent.x += agent.vx * dt;
   agent.y += agent.vy * dt;
 
-  // 7. Stuck Time Tracking (|v| < 0.2 m/s -> 4 px/s)
-  if (currentSpeed < 4.0) {
+  // 8. Stuck Time & Compressive Pressure Relaxation (|v| < 0.1 m/s -> 2 px/s)
+  if (currentSpeed < 2.0) {
     agent.stuckTime += dt;
   } else {
     agent.stuckTime = Math.max(0, agent.stuckTime - dt * 1.5);
+    // Relax compressive pressure when flowing
+    agent.compressivePressure = Math.max(0, (agent.compressivePressure || 0) - dt * 60);
   }
 }
 
 /**
- * Calculates inter-agent social repulsion and dynamic color assignment using SpatialGrid
+ * Calculates inter-agent social repulsion, compressive shockwave back-propagation,
+ * and dynamic color assignment using SpatialGrid
  * - Green: < 2.5 p/m² (Safe Flow)
  * - Amber: 2.5 - 4.5 p/m² (Elevated Friction)
  * - Glowing Rose Red: ≥ 5.0 p/m² (Crush Risk Threshold)
@@ -156,7 +174,7 @@ export function calculateCrowdInteractions(
     }
   }
 
-  // Calculate pairwise forces and local densities
+  // Calculate pairwise forces, local densities, and compressive back-propagation
   const observationRadiusPx = 25; // 1.25 meters observation disc
   const discAreaM2 = Math.PI * 1.25 * 1.25; // ~4.909 m²
 
@@ -180,6 +198,17 @@ export function calculateCrowdInteractions(
       agent.color = isFlashTick ? '#f43f5e' : '#fda4af';
     }
 
+    // Determine agent forward target direction
+    const toTargetX = agent.targetX - agent.x;
+    const toTargetY = agent.targetY - agent.y;
+    const distToTarget = Math.hypot(toTargetX, toTargetY) || 1;
+    const targetDirX = toTargetX / distToTarget;
+    const targetDirY = toTargetY / distToTarget;
+
+    // Is agent trapped / stalled at closed or slow gate? (< 0.1 m/s = 2 px/s)
+    const agentSpeed = Math.hypot(agent.vx, agent.vy);
+    const isTrapped = agentSpeed < 2.0;
+
     // Pairwise Helbing repulsive force & elastic contact
     const neighborLen = neighbors.length;
     for (let n = 0; n < neighborLen; n++) {
@@ -202,7 +231,7 @@ export function calculateCrowdInteractions(
         agent.vx += fSocial * nx * dt;
         agent.vy += fSocial * ny * dt;
 
-        // Physical elastic contact force when bodies compress
+        // Physical elastic contact force when bodies touch
         if (dist < contactDist) {
           const overlap = contactDist - dist;
           const k_body = 1200;
@@ -219,9 +248,21 @@ export function calculateCrowdInteractions(
 
           agent.vx += fFriction * tx * dt;
           agent.vy += fFriction * ty * dt;
+
+          // PHASE 2: Compressive Shockwave Back-Propagation
+          // When an agent is trapped (<0.1 m/s) and a rear agent pushes into them along approach angle:
+          const behindDot = (agent.x - other.x) * targetDirX + (agent.y - other.y) * targetDirY;
+          if (isTrapped && behindDot > 0) {
+            // Accumulate compressive pressure
+            agent.compressivePressure = (agent.compressivePressure || 0) + overlap * 30;
+
+            // Amplify repulsive force directed backwards along incoming approach angle
+            const shockwaveAmplification = 2.2 + Math.min(3.0, (agent.compressivePressure || 0) / 80);
+            other.vx -= targetDirX * fElastic * shockwaveAmplification * dt;
+            other.vy -= targetDirY * fElastic * shockwaveAmplification * dt;
+          }
         }
       }
     }
   }
 }
-

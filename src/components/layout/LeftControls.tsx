@@ -1,7 +1,7 @@
 import React from 'react';
 import { useSimulationStore } from '../../state/useSimulationStore';
 import { ScenarioType } from '../../types/simulation';
-import { Play, Pause, RotateCcw, FastForward, Sliders, Zap } from 'lucide-react';
+import { Play, Pause, RotateCcw, FastForward, Sliders, Zap, Waves, AlertOctagon } from 'lucide-react';
 
 export const LeftControls: React.FC = () => {
   const scenario = useSimulationStore((s) => s.scenario);
@@ -32,6 +32,7 @@ export const LeftControls: React.FC = () => {
   const setTimeScale = useSimulationStore((s) => s.setTimeScale);
 
   const triggerReset = useSimulationStore((s) => s.triggerReset);
+  const triggerSurgeWave = useSimulationStore((s) => s.triggerSurgeWave);
   const applyMitigationPreset = useSimulationStore((s) => s.applyMitigationPreset);
 
   const scenarios: { id: ScenarioType; label: string; icon: string }[] = [
@@ -107,7 +108,30 @@ export const LeftControls: React.FC = () => {
         </div>
       </div>
 
-      {/* 2. Sliders */}
+      {/* Phase 2: Synthetic Surge Wave Trigger */}
+      <div className="p-2.5 rounded-lg border border-cyan-900/60 bg-cyan-950/20 flex flex-col gap-2">
+        <div className="flex items-center justify-between text-xs font-semibold text-cyan-300 uppercase">
+          <span className="flex items-center gap-1.5">
+            <Waves className="w-3.5 h-3.5 text-cyan-400" />
+            <span>Synthetic Surge Wave</span>
+          </span>
+          <span className="text-[9px] font-mono text-cyan-400 bg-cyan-950 px-1.5 py-0.5 rounded border border-cyan-800">
+            PHASE 2
+          </span>
+        </div>
+        <p className="text-[10px] text-slate-400 leading-tight">
+          Injects a parabolic density wave cluster into the ingress avenue to stress-test crush onset.
+        </p>
+        <button
+          onClick={() => triggerSurgeWave(45)}
+          className="w-full flex items-center justify-center gap-2 py-2 px-3 rounded-lg bg-cyan-600 hover:bg-cyan-500 text-slate-950 font-extrabold text-xs shadow-md shadow-cyan-950/60 transition"
+        >
+          <Waves className="w-4 h-4" />
+          <span>Inject Surge Wave (+45)</span>
+        </button>
+      </div>
+
+      {/* 2. Parameter Sliders */}
       <div className="space-y-3 pt-2 border-t border-slate-800">
         {/* Inflow Rate */}
         <div className="space-y-1">
@@ -241,18 +265,28 @@ export const LeftControls: React.FC = () => {
 
         {/* Reversal Mitigations */}
         {scenario === 'reversal' && (
-          <label className="flex items-center gap-2.5 p-2 rounded-lg bg-slate-950 border border-slate-800 cursor-pointer hover:border-slate-700 text-xs">
-            <input
-              type="checkbox"
-              checked={bafflesActive}
-              onChange={toggleBaffles}
-              className="w-4 h-4 rounded text-rose-500 bg-slate-900 border-slate-700 focus:ring-0"
-            />
-            <div className="flex-1">
-              <div className="font-semibold text-slate-200">Reverse Egress Buffers</div>
-              <div className="text-[10px] text-slate-400">Staggers reverse shock collapse</div>
-            </div>
-          </label>
+          <div className="space-y-2">
+            <label className="flex items-center gap-2.5 p-2 rounded-lg bg-slate-950 border border-slate-800 cursor-pointer hover:border-slate-700 text-xs">
+              <input
+                type="checkbox"
+                checked={bafflesActive}
+                onChange={toggleBaffles}
+                className="w-4 h-4 rounded text-rose-500 bg-slate-900 border-slate-700 focus:ring-0"
+              />
+              <div className="flex-1">
+                <div className="font-semibold text-slate-200">Reverse Egress Buffers</div>
+                <div className="text-[10px] text-slate-400">Staggers reverse shock collapse</div>
+              </div>
+            </label>
+
+            <button
+              onClick={() => triggerSurgeWave(50)}
+              className="w-full flex items-center justify-center gap-1.5 py-2 px-3 rounded-lg bg-rose-950/60 border border-rose-600 text-rose-300 font-bold text-xs transition animate-pulse"
+            >
+              <AlertOctagon className="w-3.5 h-3.5" />
+              <span>Trigger Emergency Reversal Surge</span>
+            </button>
+          </div>
         )}
       </div>
 
