@@ -4,6 +4,8 @@ import { getScenarioGeometry } from '../../engine/Geometry';
 import { SpatialGrid } from '../../engine/SpatialGrid';
 import { updateAgentPhysics, calculateCrowdInteractions } from '../../engine/SocialForceEngine';
 import { AgentData, Gate, Wall } from '../../types/simulation';
+import { ScenarioEngine } from '../../scenarios/engine/ScenarioEngine';
+import { PreGeneratedAgentDescriptor } from '../../scenarios/types/ScenarioTypes';
 
 export const SimulationCanvas: React.FC = () => {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -21,6 +23,13 @@ export const SimulationCanvas: React.FC = () => {
   const timeScale = useSimulationStore((s) => s.timeScale);
   const resetSignal = useSimulationStore((s) => s.resetSignal);
   const setTelemetry = useSimulationStore((s) => s.setTelemetry);
+
+  // Phase 3 Store Subscriptions
+  const syntheticEvent = useSimulationStore((s) => s.syntheticEvent);
+  const activeSchedule = useSimulationStore((s) => s.activeSchedule);
+
+  // Headless Scenario Engine Instance Reference
+  const scenarioEngineRef = useRef<ScenarioEngine | null>(null);
 
   // Mutable Physics References across animation frames
   const agentsRef = useRef<AgentData[]>([]);
@@ -44,26 +53,43 @@ export const SimulationCanvas: React.FC = () => {
 
   // Initialize or Reset Arena Geometry
   const initSimulation = () => {
+    const hasGateBInScenario =
+      scenario === 'stadium' &&
+      (auxGateActive || (syntheticEvent !== null && syntheticEvent.gate_B_share > 0));
+
     const geo = getScenarioGeometry(
       scenario,
       CANVAS_WIDTH,
       CANVAS_HEIGHT,
       bafflesActive,
-      auxGateActive,
+      hasGateBInScenario,
       dividerActive
     );
     wallsRef.current = geo.walls;
     gatesRef.current = geo.gates.map((g) => ({ ...g, cooldown: 0, totalPassed: 0 }));
     bafflesRef.current = geo.baffles;
 
-    // Reset agents and seed initial crowd
+    // Reset agents and internal tallies
     agentsRef.current = [];
     nextIdRef.current = 1;
     spawnAccRef.current = 0;
     throughputHistoryRef.current = [];
 
-    const initialCount = scenario === 'stadium' ? 45 : scenario === 'bridge' ? 50 : 40;
-    seedInitialAgents(initialCount);
+    if (syntheticEvent && activeSchedule) {
+      // Phase 3 Orchestrated Scenario Engine
+      scenarioEngineRef.current = new ScenarioEngine(syntheticEvent, activeSchedule);
+      // Synchronize initial gate operational states
+      if (scenario === 'stadium') {
+        const gateBTotalLanes = syntheticEvent.gates['gate-b']?.totalLanes ?? 4;
+        scenarioEngineRef.current.setGateOperationalLanes('gate-b', auxGateActive ? gateBTotalLanes : 0);
+        scenarioEngineRef.current.setGateLatency('gate-a', gateLatency);
+      }
+      // Strictly NO pre-seeded random agents when executing calibrated scenarios!
+    } else {
+      scenarioEngineRef.current = null;
+      const initialCount = scenario === 'stadium' ? 45 : scenario === 'bridge' ? 50 : 40;
+      seedInitialAgents(initialCount);
+    }
   };
 
   const seedInitialAgents = (count: number) => {
@@ -140,19 +166,97 @@ export const SimulationCanvas: React.FC = () => {
     agentsRef.current.push(agent);
   };
 
-  // Re-sync geometry when scenario or resetSignal changes
+  /**
+   * Instantiates a pre-generated agent descriptor from the immutable arrival schedule.
+   */
+  const spawnScheduledAgent = (desc: PreGeneratedAgentDescriptor) => {
+    let x = desc.initialConcourseX;
+    let y = desc.initialConcourseY;
+    let targetX = CANVAS_WIDTH / 2;
+    let targetY = 60;
+    let isReverse = false;
+
+    if (scenario === 'stadium') {
+      const isAdaptive = syntheticEvent?.routing_mode === 'adaptive';
+      if (isAdaptive) {
+        if (auxGateActive && (desc.initialConcourseX > CANVAS_WIDTH * 0.55 || desc.defaultGateTarget === 'gate-b')) {
+          targetX = CANVAS_WIDTH * 0.8;
+          targetY = 60;
+        } else {
+          targetX = CANVAS_WIDTH / 2;
+          targetY = 60;
+        }
+      } else {
+        // Strict fixed-target routing: pre-assigned destination NEVER dynamically mutates
+        if (desc.defaultGateTarget === 'gate-b') {
+          targetX = CANVAS_WIDTH * 0.8;
+          targetY = 60;
+        } else {
+          targetX = CANVAS_WIDTH / 2;
+          targetY = 60;
+        }
+      }
+    } else if (scenario === 'reversal') {
+      // Reversal scenario: spawn safely inside corridor, target rear emergency exit
+      x = 80 + (desc.initialConcourseX / CANVAS_WIDTH) * (CANVAS_WIDTH * 0.5);
+      y = CANVAS_HEIGHT * 0.32 + ((desc.initialConcourseY - (CANVAS_HEIGHT - 65)) / 45) * (CANVAS_HEIGHT * 0.36);
+      targetX = 50;
+      targetY = CANVAS_HEIGHT * 0.5;
+      isReverse = true;
+    } else if (scenario === 'bridge') {
+      if (desc.agentIndex % 2 === 0) {
+        x = 60;
+        y = CANVAS_HEIGHT * 0.35 + ((desc.initialConcourseY - (CANVAS_HEIGHT - 65)) / 45) * (CANVAS_HEIGHT * 0.12);
+        targetX = CANVAS_WIDTH - 50;
+        targetY = y;
+      } else {
+        x = CANVAS_WIDTH - 100;
+        y = CANVAS_HEIGHT * 0.53 + ((desc.initialConcourseY - (CANVAS_HEIGHT - 65)) / 45) * (CANVAS_HEIGHT * 0.12);
+        targetX = 50;
+        targetY = y;
+        isReverse = true;
+      }
+    }
+
+    const agent: AgentData = {
+      id: desc.agentIndex,
+      x,
+      y,
+      vx: 0,
+      vy: 0,
+      radius: desc.physicalRadiusPx,
+      targetX,
+      targetY,
+      density: 1.0,
+      stuckTime: 0,
+      color: desc.defaultGateTarget === 'gate-b' ? '#38bdf8' : '#10b981',
+      isReverse,
+      desiredSpeed: desc.walkingSpeedMps,
+      active: true,
+      spawnTimeSimSec: desc.spawnTimeSimSec,
+      targetGateId: desc.defaultGateTarget
+    };
+
+    agentsRef.current.push(agent);
+  };
+
+  // Re-sync geometry when scenario, schedule or resetSignal changes
   useEffect(() => {
     initSimulation();
-  }, [scenario, resetSignal]);
+  }, [scenario, resetSignal, activeSchedule, syntheticEvent]);
 
   // Sync toggles with existing geometry without clearing crowd
   useEffect(() => {
+    const hasGateBInScenario =
+      scenario === 'stadium' &&
+      (auxGateActive || (syntheticEvent !== null && syntheticEvent.gate_B_share > 0));
+
     const geo = getScenarioGeometry(
       scenario,
       CANVAS_WIDTH,
       CANVAS_HEIGHT,
       bafflesActive,
-      auxGateActive,
+      hasGateBInScenario,
       dividerActive
     );
     wallsRef.current = geo.walls;
@@ -167,8 +271,16 @@ export const SimulationCanvas: React.FC = () => {
     });
     gatesRef.current = newGates;
 
-    // Divert agents dynamically if aux gate was toggled
-    if (scenario === 'stadium') {
+    // Synchronize ScenarioEngine gate channel configurations
+    if (scenarioEngineRef.current && syntheticEvent) {
+      const gateBTotalLanes = syntheticEvent.gates['gate-b']?.totalLanes ?? 4;
+      scenarioEngineRef.current.setGateOperationalLanes('gate-b', auxGateActive ? gateBTotalLanes : 0);
+      scenarioEngineRef.current.setGateLatency('gate-a', gateLatency);
+    }
+
+    // Divert agents dynamically only in adaptive mode or legacy manual mode
+    const isAdaptive = !syntheticEvent || syntheticEvent.routing_mode === 'adaptive';
+    if (scenario === 'stadium' && isAdaptive) {
       for (const a of agentsRef.current) {
         if (auxGateActive && a.x > CANVAS_WIDTH * 0.5) {
           a.targetX = CANVAS_WIDTH * 0.8;
@@ -179,7 +291,7 @@ export const SimulationCanvas: React.FC = () => {
         }
       }
     }
-  }, [bafflesActive, auxGateActive, dividerActive]);
+  }, [bafflesActive, auxGateActive, dividerActive, gateLatency, syntheticEvent]);
 
   // Main 60 FPS RequestAnimationFrame Physics Loop
   useEffect(() => {
@@ -213,20 +325,29 @@ export const SimulationCanvas: React.FC = () => {
       const primaryGate = gatesRef.current[0];
 
       if (!isPaused) {
-        // 1. Inflow Spawning
-        const agentsPerSec = inflowRate / 60;
-        spawnAccRef.current += agentsPerSec * dt;
-        while (spawnAccRef.current >= 1.0) {
-          spawnAccRef.current -= 1.0;
-          if (agentsRef.current.length < 2500) {
-            spawnNewAgent();
+        // 1. Inflow Spawning: Scheduled Arrivals or Manual Inflow
+        if (scenarioEngineRef.current) {
+          const newlySpawned = scenarioEngineRef.current.step(dt);
+          for (let s = 0; s < newlySpawned.length; s++) {
+            spawnScheduledAgent(newlySpawned[s]);
+          }
+        } else {
+          const agentsPerSec = inflowRate / 60;
+          spawnAccRef.current += agentsPerSec * dt;
+          while (spawnAccRef.current >= 1.0) {
+            spawnAccRef.current -= 1.0;
+            if (agentsRef.current.length < 2500) {
+              spawnNewAgent();
+            }
           }
         }
 
-        // 2. Gate Turnstile Cooldowns
-        for (const gate of gatesRef.current) {
-          if (gate.cooldown > 0) {
-            gate.cooldown = Math.max(0, gate.cooldown - dt);
+        // 2. Gate Turnstile Cooldowns (Manual fallback mode only)
+        if (!scenarioEngineRef.current) {
+          for (const gate of gatesRef.current) {
+            if (gate.cooldown > 0) {
+              gate.cooldown = Math.max(0, gate.cooldown - dt);
+            }
           }
         }
 
@@ -267,23 +388,43 @@ export const SimulationCanvas: React.FC = () => {
           // Gate Passage Check
           for (let g = 0; g < gates.length; g++) {
             const gate = gates[g];
-            if (!gate.active) continue;
-
             const halfW = gate.width / 2 + 6;
             const halfH = gate.height / 2 + 10;
 
             if (Math.abs(a.x - gate.x) <= halfW && Math.abs(a.y - gate.y) <= halfH) {
-              if (gate.cooldown <= 0) {
-                // Agent clears gate!
-                gate.cooldown = gateLatency;
-                gate.totalPassed = (gate.totalPassed || 0) + 1;
-                a.active = false;
-                throughputHistoryRef.current.push(currentTime);
-                break;
+              if (scenarioEngineRef.current) {
+                // Multi-Lane Discrete Channel Turnstile Engine Check
+                const admitted = scenarioEngineRef.current.attemptGatePassage(gate.id);
+                if (admitted) {
+                  gate.totalPassed = (gate.totalPassed || 0) + 1;
+                  a.active = false;
+                  throughputHistoryRef.current.push(currentTime);
+                  break;
+                } else {
+                  // Stalled outside turnstile collar (closed gate or all channels on cooldown)
+                  a.vx *= 0.15;
+                  a.vy *= 0.15;
+                  if (a.y < gate.y + 12) {
+                    a.y = gate.y + 12;
+                  }
+                  a.stuckTime += dt;
+                }
               } else {
-                // Stalled at turnstile
-                a.vx *= 0.15;
-                a.vy *= 0.15;
+                // Legacy Manual Mode Passage Check
+                if (gate.active && gate.cooldown <= 0) {
+                  gate.cooldown = gateLatency;
+                  gate.totalPassed = (gate.totalPassed || 0) + 1;
+                  a.active = false;
+                  throughputHistoryRef.current.push(currentTime);
+                  break;
+                } else {
+                  a.vx *= 0.15;
+                  a.vy *= 0.15;
+                  if (!gate.active && a.y < gate.y + 12) {
+                    a.y = gate.y + 12;
+                  }
+                  a.stuckTime += dt;
+                }
               }
             }
           }
@@ -300,14 +441,29 @@ export const SimulationCanvas: React.FC = () => {
       // 5. Dispatch Telemetry at 4 Hz (every 250ms)
       if (currentTime - lastTelemetryDispatchRef.current >= 250) {
         lastTelemetryDispatchRef.current = currentTime;
-        setTelemetry({
+
+        const baseTelemetry = {
           peakDensity: Math.round(peakDensity * 10) / 10,
           spillbackMeters: Math.round((maxSpillbackPx / PPM) * 10) / 10,
           throughputPerMin: throughputHistoryRef.current.length,
           liveAgents: agentsRef.current.length,
           fps: currentFps,
           isCritical: peakDensity >= 5.0
-        });
+        };
+
+        if (scenarioEngineRef.current) {
+          const accounting = scenarioEngineRef.current.getAccounting();
+          setTelemetry({
+            ...baseTelemetry,
+            representedAdmitted: accounting.representedAdmitted,
+            totalAdmittedSim: accounting.totalAdmitted,
+            totalGeneratedSim: accounting.totalInjected,
+            observedThroughputRep: scenarioEngineRef.current.getObservedThroughputRepPerMin(),
+            simTimeSec: Math.round(scenarioEngineRef.current.getCurrentSimTimeSec() * 10) / 10
+          });
+        } else {
+          setTelemetry(baseTelemetry);
+        }
       }
 
       // 6. Draw Full Frame
@@ -329,7 +485,9 @@ export const SimulationCanvas: React.FC = () => {
     walkingSpeed,
     scenario,
     auxGateActive,
-    setTelemetry
+    setTelemetry,
+    activeSchedule,
+    syntheticEvent
   ]);
 
   /**
@@ -378,7 +536,10 @@ export const SimulationCanvas: React.FC = () => {
 
       ctx.font = '10px "JetBrains Mono", monospace';
       ctx.fillStyle = 'rgba(52, 211, 153, 0.8)';
-      ctx.fillText(`PEDESTRIAN INFLOW ZONE [${inflowRate} / MIN]`, 75, CANVAS_HEIGHT - 35);
+      const rateLabel = scenarioEngineRef.current && syntheticEvent
+        ? `SCHEDULED DEMAND [${syntheticEvent.arrival_distribution.toUpperCase()}] S_pop=${syntheticEvent.population_scaling_ratio.toFixed(1)}`
+        : `PEDESTRIAN INFLOW ZONE [${inflowRate} / MIN]`;
+      ctx.fillText(rateLabel, 75, CANVAS_HEIGHT - 35);
     }
 
     // Draw Baffles (Crash-Barrier Styling)
@@ -440,11 +601,21 @@ export const SimulationCanvas: React.FC = () => {
       ctx.restore();
     }
 
-    // Draw Gates & Turnstiles
+    // Draw Gates & Turnstiles (Multi-Lane & Closed Status Aware)
     for (const gate of gatesRef.current) {
       ctx.save();
-      const isReady = gate.cooldown <= 0;
-      const statusColor = isReady ? '#10b981' : '#f59e0b';
+      const gateState = scenarioEngineRef.current?.getGateState(gate.id);
+      const isClosed = gateState ? gateState.operationalLanes <= 0 : !gate.active;
+      const isAllBusy = gateState
+        ? gateState.channels.every((c) => !c.operational || c.cooldownRemainingSec > 0)
+        : gate.cooldown > 0;
+
+      let statusColor = '#10b981'; // Green (operational & available)
+      if (isClosed) {
+        statusColor = '#ef4444'; // Red (closed/rejecting)
+      } else if (isAllBusy) {
+        statusColor = '#f59e0b'; // Amber (all channels busy)
+      }
 
       ctx.fillStyle = 'rgba(15, 23, 42, 0.9)';
       ctx.strokeStyle = statusColor;
@@ -452,21 +623,42 @@ export const SimulationCanvas: React.FC = () => {
       ctx.fillRect(gate.x - gate.width / 2, gate.y - gate.height / 2, gate.width, gate.height);
       ctx.strokeRect(gate.x - gate.width / 2, gate.y - gate.height / 2, gate.width, gate.height);
 
-      // Rotating turnstile arm
-      const angle = (currentTime / 350) % (Math.PI * 2);
-      ctx.strokeStyle = statusColor;
-      ctx.lineWidth = 1.5;
-      ctx.beginPath();
-      ctx.moveTo(gate.x - 7 * Math.cos(angle), gate.y - 7 * Math.sin(angle));
-      ctx.lineTo(gate.x + 7 * Math.cos(angle), gate.y + 7 * Math.sin(angle));
-      ctx.stroke();
+      if (isClosed) {
+        // Red locked X for closed gate
+        ctx.strokeStyle = '#ef4444';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(gate.x - 7, gate.y - 7);
+        ctx.lineTo(gate.x + 7, gate.y + 7);
+        ctx.moveTo(gate.x + 7, gate.y - 7);
+        ctx.lineTo(gate.x - 7, gate.y + 7);
+        ctx.stroke();
+      } else {
+        // Rotating turnstile arm
+        const angle = (currentTime / 350) % (Math.PI * 2);
+        ctx.strokeStyle = statusColor;
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        ctx.moveTo(gate.x - 7 * Math.cos(angle), gate.y - 7 * Math.sin(angle));
+        ctx.lineTo(gate.x + 7 * Math.cos(angle), gate.y + 7 * Math.sin(angle));
+        ctx.stroke();
+      }
 
-      // Gate Label
+      // Gate Status Label
       ctx.font = '10px "JetBrains Mono", monospace';
       ctx.fillStyle = '#f8fafc';
-      const label = `${gate.name || gate.id}: ${
-        gate.cooldown > 0 ? `SCAN (${gate.cooldown.toFixed(1)}s)` : 'CLEAR'
-      } [${gate.totalPassed || 0}]`;
+      let label = '';
+      if (gateState) {
+        if (gateState.operationalLanes <= 0) {
+          label = `${gateState.name || gate.name || gate.id}: CLOSED (0/${gateState.totalLanes}L) [0]`;
+        } else {
+          label = `${gateState.name || gate.name || gate.id}: ${gateState.operationalLanes}/${gateState.totalLanes}L (${gateState.turnstileLatencySec}s) [${gate.totalPassed || 0}]`;
+        }
+      } else {
+        label = `${gate.name || gate.id}: ${
+          gate.cooldown > 0 ? `SCAN (${gate.cooldown.toFixed(1)}s)` : 'CLEAR'
+        } [${gate.totalPassed || 0}]`;
+      }
       ctx.fillText(label, gate.x - 65, gate.y - 16);
       ctx.restore();
     }
@@ -543,4 +735,3 @@ export const SimulationCanvas: React.FC = () => {
     </div>
   );
 };
-

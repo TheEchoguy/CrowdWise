@@ -6,7 +6,8 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "test": "esbuild src/scenarios/__tests__/allTests.ts --bundle --platform=node --outfile=node_modules/.cache/test.cjs && node node_modules/.cache/test.cjs"
   },
   "dependencies": {
     "clsx": "^2.1.1",

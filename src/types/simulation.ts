@@ -1,6 +1,6 @@
 /**
  * CROWDWISE Predictive Crowd Digital Twin & Safety Lab
- * Foundational Phase 1 Simulation Type Definitions
+ * Foundational Simulation Type Definitions (Phase 3 Extended)
  */
 
 export interface Wall {
@@ -43,15 +43,34 @@ export interface AgentData {
   desiredSpeed?: number;
   maxSpeed?: number;
   active?: boolean;
+  // Phase 3 Extended Analytics Attributes
+  spawnTimeSimSec?: number;
+  targetGateId?: string;
+  queueWaitingTimeSec?: number;
+  freeFlowTravelSec?: number;
 }
 
 export interface TelemetryState {
   peakDensity: number;      // Maximum local density (p/m²)
   spillbackMeters: number;  // Queue spillback from primary bottleneck (meters)
-  throughputPerMin: number; // Clearances per minute
+  throughputPerMin: number; // Clearances per minute (sim agents)
   liveAgents: number;       // Active pedestrians on map
   fps: number;              // Rendering/physics frame rate
-  isCritical: boolean;      // True when peakDensity >= 5.0
+  isCritical: boolean;      // True when peakDensity >= critical threshold
+  // Phase 3 Verified Extended Metrics
+  representedAdmitted?: number;
+  totalAdmittedSim?: number;
+  totalGeneratedSim?: number;
+  observedThroughputRep?: number;
+  theoreticalCapacityRep?: number;
+  capacityUtilization?: number;
+  spillbackGateAMeters?: number;
+  spillbackGateBMeters?: number;
+  averageWaitingTime?: number;
+  maximumWaitingTime?: number;
+  criticalHazardDuration?: number;
+  congestionEventsCount?: number;
+  simTimeSec?: number;
 }
 
 export type ScenarioType = 'stadium' | 'bridge' | 'reversal';
@@ -61,4 +80,3 @@ export interface ScenarioGeometry {
   gates: Gate[];
   baffles: Wall[];
 }
-
