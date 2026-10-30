@@ -543,3 +543,4 @@ export const SimulationCanvas: React.FC = () => {
     </div>
   );
 };
+

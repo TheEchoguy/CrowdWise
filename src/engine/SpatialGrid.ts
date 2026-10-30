@@ -91,3 +91,4 @@ export class SpatialGrid {
     return count / areaM2;
   }
 }
+

@@ -61,3 +61,4 @@ export interface ScenarioGeometry {
   gates: Gate[];
   baffles: Wall[];
 }
+

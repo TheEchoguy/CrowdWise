@@ -208,3 +208,4 @@ export function getScenarioGeometry(
 
   return { walls, gates, baffles };
 }
+

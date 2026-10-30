@@ -188,3 +188,4 @@ export const RightTelemetry: React.FC = () => {
     </div>
   );
 };
+
