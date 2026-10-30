@@ -13,6 +13,9 @@ import {
   RenderDetailLevel,
   Gate,
   Zone,
+  StadiumSide,
+  GateSideSimConfig,
+  GateSideEvent,
 } from '../types';
 import { SimulationEngine } from '../engine/SimulationEngine';
 import { SpatialAnalyzer } from '../engine/SpatialAnalyzer';
@@ -59,6 +62,17 @@ interface SimulationStoreState {
   setVenueProfile: (venueId: string) => void;
   updateGate: (gateId: string, updates: Partial<Gate>) => void;
   updateZone: (zoneId: string, updates: Partial<Zone>) => void;
+
+  // Gate-Side Simulation
+  focusedSide: StadiumSide;
+  setFocusedSide: (side: StadiumSide) => void;
+  selectedGateIds: string[];
+  setSelectedGateIds: (ids: string[]) => void;
+  gateSideConfig: GateSideSimConfig;
+  updateGateSideConfig: (updates: Partial<GateSideSimConfig>) => void;
+  applyInitialQueue: (count: number, gateIds?: string[]) => void;
+  resetGateSideSim: () => void;
+  gateSideEvents: GateSideEvent[];
 
   // Scenarios & Interventions
   activeScenarioId: string;
@@ -112,6 +126,24 @@ interface SimulationStoreState {
 const initialVenue = CHINNASWAMY_STADIUM_PROFILE;
 const initialEngine = new SimulationEngine(initialVenue, 1337);
 
+
+export const SIDE_GATES: Record<StadiumSide, string[]> = {
+  ALL: [],
+  NORTH: ['gate-1', 'gate-2', 'gate-3', 'gate-4', 'gate-5'],
+  WEST: ['gate-6', 'gate-7', 'gate-8', 'gate-9', 'gate-10'],
+  SOUTH: ['gate-11', 'gate-12', 'gate-13', 'gate-14', 'gate-15', 'gate-16'],
+  EAST: ['gate-17', 'gate-18', 'gate-19', 'gate-20', 'gate-21'],
+  CUSTOM: [],
+};
+
+export const getSideForGate = (gateId: string): StadiumSide => {
+  if (['gate-1', 'gate-2', 'gate-3', 'gate-4', 'gate-5'].includes(gateId)) return 'NORTH';
+  if (['gate-6', 'gate-7', 'gate-8', 'gate-9', 'gate-10'].includes(gateId)) return 'WEST';
+  if (['gate-11', 'gate-12', 'gate-13', 'gate-14', 'gate-15', 'gate-16'].includes(gateId)) return 'SOUTH';
+  if (['gate-17', 'gate-18', 'gate-19', 'gate-20', 'gate-21'].includes(gateId)) return 'EAST';
+  return 'NORTH';
+};
+
 export const useSimulationStore = create<SimulationStoreState>((set, get) => ({
   activeTab: 'command-centre',
   setActiveTab: (tab) => set({ activeTab: tab }),
@@ -128,7 +160,114 @@ export const useSimulationStore = create<SimulationStoreState>((set, get) => ({
   currentVenue: initialVenue,
   selectedGateId: null,
   selectedZoneId: null,
-  setSelectedGateId: (id) => set({ selectedGateId: id }),
+  focusedSide: 'ALL',
+  selectedGateIds: [],
+  gateSideConfig: {
+    selectedSide: 'ALL',
+    selectedGateIds: [],
+    inflowRatePerMin: 120,
+    arrivalPattern: 'GRADUAL',
+    processingRatePerSec: 1.0,
+    initialQueue: 0,
+    routingPolicy: 'SHORTEST_QUEUE',
+    spillbackThreshold: 80,
+    durationSecs: 300,
+  },
+  gateSideEvents: [],
+
+  setSelectedGateId: (id) => {
+    const { engine, gateSideConfig } = get();
+    if (id) {
+      const side = getSideForGate(id);
+      const updatedConfig = {
+        ...gateSideConfig,
+        selectedSide: side,
+        selectedGateIds: [id],
+      };
+      engine.setGateSideConfig(updatedConfig);
+      set({
+        selectedGateId: id,
+        focusedSide: side,
+        selectedGateIds: [id],
+        gateSideConfig: updatedConfig,
+      });
+    } else {
+      const updatedConfig = {
+        ...gateSideConfig,
+        selectedSide: 'ALL' as StadiumSide,
+        selectedGateIds: [],
+      };
+      engine.setGateSideConfig(updatedConfig);
+      set({
+        selectedGateId: null,
+        focusedSide: 'ALL',
+        selectedGateIds: [],
+        gateSideConfig: updatedConfig,
+      });
+    }
+  },
+
+  setFocusedSide: (side) => {
+    const { engine, gateSideConfig, selectedGateIds } = get();
+    let gateIds: string[] = [];
+    if (side === 'ALL') {
+      gateIds = [];
+    } else if (side === 'CUSTOM') {
+      gateIds = selectedGateIds.length > 0 ? selectedGateIds : ['gate-1'];
+    } else {
+      gateIds = SIDE_GATES[side];
+    }
+
+    const updatedConfig = {
+      ...gateSideConfig,
+      selectedSide: side,
+      selectedGateIds: gateIds,
+    };
+    engine.setGateSideConfig(updatedConfig);
+    set({
+      focusedSide: side,
+      selectedGateIds: gateIds,
+      selectedGateId: gateIds.length > 0 ? gateIds[0] : null,
+      gateSideConfig: updatedConfig,
+    });
+  },
+
+  setSelectedGateIds: (ids) => {
+    const { engine, gateSideConfig } = get();
+    const updatedConfig = {
+      ...gateSideConfig,
+      selectedGateIds: ids,
+      selectedSide: ids.length > 0 ? ('CUSTOM' as StadiumSide) : ('ALL' as StadiumSide),
+    };
+    engine.setGateSideConfig(updatedConfig);
+    set({
+      selectedGateIds: ids,
+      focusedSide: ids.length > 0 ? 'CUSTOM' : 'ALL',
+      selectedGateId: ids.length > 0 ? ids[0] : null,
+      gateSideConfig: updatedConfig,
+    });
+  },
+
+  updateGateSideConfig: (updates) => {
+    const { engine, gateSideConfig } = get();
+    const updated = { ...gateSideConfig, ...updates };
+    engine.setGateSideConfig(updated);
+    set({ gateSideConfig: updated });
+  },
+
+  applyInitialQueue: (count, gateIds) => {
+    const { engine, selectedGateIds } = get();
+    const targets = gateIds && gateIds.length > 0 ? gateIds : selectedGateIds;
+    engine.applyInitialQueue(count, targets);
+    get().syncFromEngine();
+  },
+
+  resetGateSideSim: () => {
+    const { engine } = get();
+    engine.reset();
+    get().syncFromEngine();
+  },
+
   setSelectedZoneId: (id) => set({ selectedZoneId: id }),
 
   setVenueProfile: (venueId: string) => {
@@ -419,6 +558,7 @@ export const useSimulationStore = create<SimulationStoreState>((set, get) => ({
       metricsSummary: engine.getSummary(),
       metricsHistory: [...st.metricsHistory],
       currentVenue: JSON.parse(JSON.stringify(st.venue)),
+      gateSideEvents: [...engine.gateSideEvents],
     });
   },
 }));

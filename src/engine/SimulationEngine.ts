@@ -12,6 +12,10 @@ import {
   SimulationEvent,
   OperatorRecommendation,
   SimulationMetricsSummary,
+  StadiumSide,
+  GateRoutingPolicy,
+  GateSideSimConfig,
+  GateSideEvent,
 } from '../types';
 import { PRNG } from './random';
 import { distance, normalize, sub, add, scale, pointInPolygon } from './geometry';
@@ -58,6 +62,22 @@ export class SimulationEngine {
   private lastMetricsRecordTime: number = 0;
   private activeAdmissionPauseUntil: number = 0;
 
+  // Gate-Side Simulation State
+  public gateSideConfig: GateSideSimConfig = {
+    selectedSide: 'ALL',
+    selectedGateIds: [],
+    inflowRatePerMin: 120,
+    arrivalPattern: 'GRADUAL',
+    processingRatePerSec: 1.0,
+    initialQueue: 0,
+    routingPolicy: 'SHORTEST_QUEUE',
+    spillbackThreshold: 80,
+    durationSecs: 300,
+  };
+  public gateSideEvents: GateSideEvent[] = [];
+  private gateProcessingAccumulators: Map<string, number> = new Map();
+  private gateArrivalAccumulator: number = 0;
+
   constructor(initialVenue: Venue, seed: number = 1337) {
     this.prng = new PRNG(seed);
     this.spatialGrid = new SpatialHashGrid(3.5);
@@ -87,6 +107,15 @@ export class SimulationEngine {
       randomSeed: seed,
     };
 
+    this.state.venue.gates.forEach((g) => {
+      g.totalArrivalsCount = g.totalArrivalsCount || 0;
+      g.totalProcessedCount = g.totalProcessedCount || 0;
+      g.maxQueueRecorded = g.maxQueueRecorded || 0;
+      g.spillbackCount = g.spillbackCount || 0;
+      g.initialQueue = g.initialQueue || 0;
+      g.queueAreaCapacity = g.queueAreaCapacity || 80;
+    });
+
     this.buildNavigationGraph();
     this.recordMetricsSnapshot();
   }
@@ -113,6 +142,136 @@ export class SimulationEngine {
 
   public setSpeed(multiplier: number): void {
     this.state.speedMultiplier = Math.max(0.25, Math.min(10, multiplier));
+  }
+
+  public setGateSideConfig(config: Partial<GateSideSimConfig>): void {
+    const prev = { ...this.gateSideConfig };
+    this.gateSideConfig = { ...this.gateSideConfig, ...config };
+
+    if (config.inflowRatePerMin !== undefined && config.inflowRatePerMin !== prev.inflowRatePerMin) {
+      this.logGateSideEvent(
+        'INFLOW_CHANGE',
+        `Inflow rate set to ${config.inflowRatePerMin} people/min (${(config.inflowRatePerMin / 60).toFixed(2)} ppl/s)`
+      );
+    }
+
+    if (config.processingRatePerSec !== undefined) {
+      const rateSec = config.processingRatePerSec;
+      const rateMin = Math.round(rateSec * 60);
+      const targetGates = this.state.venue.gates.filter((g) =>
+        this.gateSideConfig.selectedGateIds.includes(g.id)
+      );
+      targetGates.forEach((g) => {
+        g.scannerProcessingRatePerSec = rateSec;
+        g.scannerProcessingRatePerMin = rateMin;
+      });
+      if (rateSec !== prev.processingRatePerSec) {
+        this.logGateSideEvent(
+          'CONFIG_CHANGE',
+          `Scanner processing speed set to ${rateSec.toFixed(2)} people/sec/counter (${rateMin} ppl/min)`
+        );
+      }
+    }
+
+    if (config.operationalScannersOverride !== undefined) {
+      const targetGates = this.state.venue.gates.filter((g) =>
+        this.gateSideConfig.selectedGateIds.includes(g.id)
+      );
+      targetGates.forEach((g) => {
+        g.operationalScanners = Math.min(g.scannerCount, Math.max(0, config.operationalScannersOverride!));
+      });
+    }
+  }
+
+  public logGateSideEvent(type: GateSideEvent['type'], message: string): void {
+    const simSecs = Math.floor(this.state.simTimeSecs);
+    const mins = Math.floor(simSecs / 60);
+    const secs = simSecs % 60;
+    const timeFormatted = `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
+
+    const evt: GateSideEvent = {
+      id: `gse-${Date.now()}-${Math.random()}`,
+      timestamp: simSecs,
+      timeFormatted,
+      type,
+      message,
+    };
+    this.gateSideEvents.unshift(evt);
+    if (this.gateSideEvents.length > 60) {
+      this.gateSideEvents.pop();
+    }
+  }
+
+  public applyInitialQueue(count: number, gateIds?: string[]): void {
+    const targets =
+      gateIds && gateIds.length > 0
+        ? this.state.venue.gates.filter((g) => gateIds.includes(g.id))
+        : this.state.venue.gates.filter((g) => this.gateSideConfig.selectedGateIds.includes(g.id));
+
+    if (targets.length === 0) return;
+
+    for (const g of targets) {
+      g.currentQueue = count;
+      g.initialQueue = count;
+      g.totalArrivalsCount = (g.totalArrivalsCount || 0) + count;
+      g.maxQueueRecorded = Math.max(g.maxQueueRecorded || 0, count);
+
+      // Clean existing queued agents at this gate to avoid collision
+      this.state.agents = this.state.agents.filter(
+        (a) => !(a.targetGateId === g.id && (a.state === 'QUEUING' || a.state === 'PROCESSING'))
+      );
+
+      const cx = this.state.venue.dimensions.width / 2;
+      const cy = this.state.venue.dimensions.height / 2;
+      const dirX = g.position.x - cx;
+      const dirY = g.position.y - cy;
+      const len = Math.sqrt(dirX * dirX + dirY * dirY) || 1;
+      const nx = dirX / len;
+      const ny = dirY / len;
+      const tx = -ny;
+      const ty = nx;
+
+      const visualCount = Math.min(100, count);
+      const lanes = Math.max(1, g.scannerCount);
+
+      for (let k = 0; k < visualCount; k++) {
+        const lane = k % lanes;
+        const depth = Math.floor(k / lanes);
+        const offsetT = ((lane - (lanes - 1) / 2) / lanes) * (g.width * 0.75);
+        const distBack = 1.8 + depth * 0.9;
+
+        const posX = g.position.x + nx * distBack + tx * offsetT;
+        const posY = g.position.y + ny * distBack + ty * offsetT;
+
+        const agent: CrowdAgent = {
+          id: this.nextAgentId++,
+          x: posX,
+          y: posY,
+          vx: 0,
+          vy: 0,
+          targetX: g.position.x,
+          targetY: g.position.y,
+          preferredSpeed: this.prng.range(1.15, 1.4),
+          radius: 0.32,
+          state: depth === 0 && lane < g.operationalScanners ? 'PROCESSING' : 'QUEUING',
+          targetGateId: g.id,
+          pathWaypoints: [g.position],
+          currentWaypointIdx: 0,
+          shirtColor: this.prng.choice(SHIRT_COLORS),
+          skinColor: this.prng.choice(SKIN_TONES),
+          stridePhase: this.prng.range(0, Math.PI * 2),
+          facingAngle: Math.atan2(-ny, -nx),
+          arrivalTime: this.state.simTimeSecs,
+          waitDurationSecs: 0,
+        };
+        this.state.agents.push(agent);
+      }
+    }
+
+    this.logGateSideEvent(
+      'CONFIG_CHANGE',
+      `Initial queue of ${count} people applied to ${targets.map((g) => g.name).join(', ')}`
+    );
   }
 
   private buildNavigationGraph(): void {
@@ -339,6 +498,111 @@ export class SimulationEngine {
 
       this.spawnSingleAgent();
     }
+
+    // Dedicated Gate-Side Inflow Spawner
+    if (this.gateSideConfig.selectedGateIds.length > 0) {
+      let gateInflowPerSec = this.gateSideConfig.inflowRatePerMin / 60;
+
+      if (this.gateSideConfig.arrivalPattern === 'PEAK_SURGE') {
+        const peakTime = Math.min(120, this.gateSideConfig.durationSecs * 0.5);
+        const sigma = Math.max(30, this.gateSideConfig.durationSecs * 0.2);
+        const gaussian = Math.exp(-Math.pow(this.state.simTimeSecs - peakTime, 2) / (2 * sigma * sigma));
+        gateInflowPerSec *= 0.5 + gaussian * 2.0;
+      } else if (this.gateSideConfig.arrivalPattern === 'BURST') {
+        const cycle = this.state.simTimeSecs % 60;
+        if (cycle < 20) {
+          gateInflowPerSec *= 2.0;
+        } else {
+          gateInflowPerSec *= 0.5;
+        }
+      } else if (this.gateSideConfig.arrivalPattern === 'TRANSPORT_PULSE') {
+        const cycle = this.state.simTimeSecs % 90;
+        if (cycle < 30) {
+          gateInflowPerSec *= 2.4;
+        } else {
+          gateInflowPerSec *= 0.3;
+        }
+      }
+
+      this.gateArrivalAccumulator += gateInflowPerSec * dt;
+
+      while (this.gateArrivalAccumulator >= 1.0) {
+        this.gateArrivalAccumulator -= 1.0;
+        this.spawnGateSideAgent();
+      }
+    }
+  }
+
+  private spawnGateSideAgent(): void {
+    const v = this.state.venue;
+    const selectedGates = v.gates.filter((g) => this.gateSideConfig.selectedGateIds.includes(g.id));
+    if (selectedGates.length === 0) return;
+
+    // Filter operational gates
+    const operationalGates = selectedGates.filter(
+      (g) => g.direction !== 'CLOSED' && g.status !== 'TEMPORARILY_CLOSED' && g.status !== 'UNAVAILABLE'
+    );
+
+    let targetGate: Gate = selectedGates[0];
+
+    if (operationalGates.length > 0) {
+      if (this.gateSideConfig.routingPolicy === 'SHORTEST_QUEUE') {
+        targetGate = [...operationalGates].sort((a, b) => a.currentQueue - b.currentQueue)[0];
+      } else if (this.gateSideConfig.routingPolicy === 'LEAST_WAIT_TIME') {
+        targetGate = [...operationalGates].sort((a, b) => a.queueWaitTimeSecs - b.queueWaitTimeSecs)[0];
+      } else if (this.gateSideConfig.routingPolicy === 'ROUTE_AWARE') {
+        // Route-aware: penalize gates with blocked downstream corridor or congested concourse
+        targetGate = [...operationalGates].sort((a, b) => {
+          const cA = v.corridors.find((c) => c.id === a.downstreamCorridorId);
+          const cB = v.corridors.find((c) => c.id === b.downstreamCorridorId);
+          const scoreA = a.currentQueue + (cA?.isBlocked ? 2000 : 0);
+          const scoreB = b.currentQueue + (cB?.isBlocked ? 2000 : 0);
+          return scoreA - scoreB;
+        })[0];
+      } else {
+        // FIXED_ALLOCATION: uniform random or round-robin
+        targetGate = this.prng.choice(operationalGates);
+      }
+    } else {
+      // All gates closed: held at entrance
+      targetGate = selectedGates[0];
+    }
+
+    targetGate.totalArrivalsCount = (targetGate.totalArrivalsCount || 0) + 1;
+
+    // Spawn point along gate's approach route
+    const route =
+      v.approachRoutes.find((ar) => ar.entryGateIds.includes(targetGate.id)) || v.approachRoutes[0];
+    const jitterX = this.prng.range(-route.width * 0.4, route.width * 0.4);
+    const jitterY = this.prng.range(-2, 2);
+    const spawnX = route.startPoint.x + jitterX;
+    const spawnY = route.startPoint.y + jitterY;
+
+    const path = this.navGraph.findPath({ x: spawnX, y: spawnY }, targetGate.position);
+
+    const agent: CrowdAgent = {
+      id: this.nextAgentId++,
+      x: spawnX,
+      y: spawnY,
+      vx: 0,
+      vy: 0,
+      targetX: targetGate.position.x,
+      targetY: targetGate.position.y,
+      preferredSpeed: this.prng.range(1.15, 1.45),
+      radius: 0.32,
+      state: 'APPROACHING',
+      targetGateId: targetGate.id,
+      pathWaypoints: path,
+      currentWaypointIdx: 0,
+      shirtColor: this.prng.choice(SHIRT_COLORS),
+      skinColor: this.prng.choice(SKIN_TONES),
+      stridePhase: this.prng.range(0, Math.PI * 2),
+      facingAngle: 0,
+      arrivalTime: this.state.simTimeSecs,
+      waitDurationSecs: 0,
+    };
+
+    this.state.agents.push(agent);
   }
 
   private spawnSingleAgent(): void {
@@ -453,9 +717,56 @@ export class SimulationEngine {
 
       if (a.state === 'QUEUING' || a.state === 'PROCESSING') {
         a.waitDurationSecs += dt;
-        // Jitter slightly in place while queueing
-        a.vx = (this.prng.range(-0.1, 0.1));
-        a.vy = (this.prng.range(-0.1, 0.1));
+        const gate = v.gates.find((g) => g.id === a.targetGateId);
+        if (gate) {
+          // Physical orderly queue slot positioning
+          const cx = v.dimensions.width / 2;
+          const cy = v.dimensions.height / 2;
+          const dirX = gate.position.x - cx;
+          const dirY = gate.position.y - cy;
+          const len = Math.sqrt(dirX * dirX + dirY * dirY) || 1;
+          const nx = dirX / len;
+          const ny = dirY / len;
+          const tx = -ny;
+          const ty = nx;
+
+          // Find agent position in queue line
+          const gateQueuers = agents.filter(
+            (ag) => (ag.state === 'QUEUING' || ag.state === 'PROCESSING') && ag.targetGateId === gate.id
+          );
+          const k = Math.max(0, gateQueuers.indexOf(a));
+          const lanes = Math.max(1, gate.scannerCount);
+          const lane = k % lanes;
+          const depth = Math.floor(k / lanes);
+
+          const offsetT = ((lane - (lanes - 1) / 2) / lanes) * (gate.width * 0.75);
+          const distBack = 1.6 + depth * 0.85;
+
+          const slotX = gate.position.x + nx * distBack + tx * offsetT;
+          const slotY = gate.position.y + ny * distBack + ty * offsetT;
+
+          const dx = slotX - a.x;
+          const dy = slotY - a.y;
+          const dist = Math.sqrt(dx * dx + dy * dy);
+
+          if (dist > 0.05) {
+            const spd = Math.min(1.4, dist * 3.0);
+            a.vx = (dx / dist) * spd;
+            a.vy = (dy / dist) * spd;
+          } else {
+            a.vx = 0;
+            a.vy = 0;
+          }
+          a.x += a.vx * dt;
+          a.y += a.vy * dt;
+          a.facingAngle = Math.atan2(-ny, -nx);
+
+          if (depth === 0 && lane < gate.operationalScanners) {
+            a.state = 'PROCESSING';
+          } else {
+            a.state = 'QUEUING';
+          }
+        }
         continue;
       }
 
@@ -550,27 +861,46 @@ export class SimulationEngine {
       // Effective processing rate per second
       let ratePerSec = 0;
       if (!isPausedGlobally) {
-        ratePerSec = (g.operationalScanners * g.scannerProcessingRatePerMin) / 60;
+        const ratePerScanner =
+          g.scannerProcessingRatePerSec !== undefined
+            ? g.scannerProcessingRatePerSec
+            : g.scannerProcessingRatePerMin / 60;
+        ratePerSec = g.operationalScanners * ratePerScanner;
       }
 
-      // Process queuing agents
+      // Downstream bottleneck & crush hazard prevention
+      const corridor = v.corridors.find((c) => c.id === g.downstreamCorridorId);
+      const isCorridorBlocked = corridor && corridor.isBlocked;
+      const downstreamZone = corridor ? v.zones.find((z) => z.id === corridor.toZoneId) : null;
+      const isDownstreamCritical = downstreamZone && downstreamZone.currentDensity >= 3.2;
+
+      if (isCorridorBlocked || isDownstreamCritical) {
+        ratePerSec = 0; // Throttle release to prevent corridor crush
+        g.suggestedAction = 'Downstream corridor congested / blocked: holding gate release';
+      }
+
+      // Process queuing agents using exact mass-balance accumulator
+      let acc = this.gateProcessingAccumulators.get(g.id) || 0;
       if (g.currentQueue > 0 && ratePerSec > 0) {
-        const agentsToProcess = ratePerSec * dt;
-        const count = Math.min(g.currentQueue, agentsToProcess);
+        acc += ratePerSec * dt;
+        const toProcess = Math.min(g.currentQueue, Math.floor(acc));
+        acc -= toProcess;
 
-        // Find queuing agents at this gate
-        const queuingAgents = this.state.agents.filter(
-          (a) => a.state === 'QUEUING' && a.targetGateId === g.id
-        );
+        if (toProcess > 0) {
+          const queuingAgents = this.state.agents.filter(
+            (a) => (a.state === 'QUEUING' || a.state === 'PROCESSING') && a.targetGateId === g.id
+          );
 
-        const admittedCount = Math.floor(count);
-        for (let i = 0; i < admittedCount && i < queuingAgents.length; i++) {
-          const agent = queuingAgents[i];
-          agent.state = 'INSIDE';
-          agent.enteredTime = this.state.simTimeSecs;
-          g.currentQueue = Math.max(0, g.currentQueue - 1);
+          for (let i = 0; i < toProcess; i++) {
+            g.currentQueue = Math.max(0, g.currentQueue - 1);
+            g.totalProcessedCount = (g.totalProcessedCount || 0) + 1;
 
-          // Route agent to local downstream concourse or nearest concourse sector
+            if (i < queuingAgents.length) {
+              const agent = queuingAgents[i];
+              agent.state = 'INSIDE';
+              agent.enteredTime = this.state.simTimeSecs;
+
+              // Route agent to local downstream concourse or nearest concourse sector
           let targetZone: Zone | null = null;
           if (g.downstreamCorridorId) {
             const corr = v.corridors.find((c) => c.id === g.downstreamCorridorId);
@@ -616,6 +946,22 @@ export class SimulationEngine {
             agent.targetZoneId = targetZone.id;
           }
         }
+      }
+    }
+  }
+
+      this.gateProcessingAccumulators.set(g.id, acc);
+
+      // Spillback and max queue tracking
+      const penCap = g.queueAreaCapacity || 80;
+      if (g.currentQueue > penCap) {
+        g.spillbackCount = g.currentQueue - penCap;
+      } else {
+        g.spillbackCount = 0;
+      }
+
+      if (g.currentQueue > (g.maxQueueRecorded || 0)) {
+        g.maxQueueRecorded = g.currentQueue;
       }
 
       // Update estimated wait time
@@ -958,6 +1304,9 @@ export class SimulationEngine {
     this.spawnAccumulator = 0;
     this.nextAgentId = 1;
     this.activeAdmissionPauseUntil = 0;
+    this.gateSideEvents = [];
+    this.gateProcessingAccumulators.clear();
+    this.gateArrivalAccumulator = 0;
     this.prng.reset(this.state.randomSeed);
 
     // Reset gates & zones

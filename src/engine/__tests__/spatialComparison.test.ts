@@ -192,3 +192,4 @@ describe('SpatialAnalyzer & Zone-by-Zone Congestion Comparison', () => {
     expect(spatialSummary.largestRelief).toBeDefined();
   });
 });
+

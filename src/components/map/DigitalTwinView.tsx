@@ -16,8 +16,19 @@ import {
   Sliders,
   X,
   ExternalLink,
+  Play,
+  Pause,
+  Activity,
+  Users,
+  ShieldCheck,
+  Clock,
+  ArrowRight,
+  TrendingUp,
+  TrendingDown,
+  RefreshCw,
 } from 'lucide-react';
-import { useSimulationStore } from '../../store/simulationStore';
+import { StadiumSide, GateRoutingPolicy, ArrivalPatternType } from '../../types';
+import { useSimulationStore, SIDE_GATES } from '../../store/simulationStore';
 import { CanvasRenderer } from '../../engine/renderer/CanvasRenderer';
 import { distance } from '../../engine/geometry';
 import { Gate, Zone } from '../../types';
@@ -42,7 +53,28 @@ export const DigitalTwinView: React.FC = () => {
     incidents,
     comparisons,
     activeComparisonId,
+    focusedSide,
+    setFocusedSide,
+    selectedGateIds,
+    setSelectedGateIds,
+    gateSideConfig,
+    updateGateSideConfig,
+    applyInitialQueue,
+    resetGateSideSim,
+    gateSideEvents,
+    isRunning,
+    isPaused,
+    startSimulation,
+    pauseSimulation,
+    resumeSimulation,
+    resetSimulation,
+    speedMultiplier,
+    setSpeedMultiplier,
+    simTimeSecs,
   } = useSimulationStore();
+
+  const [activeSideTab, setActiveSideTab] = useState<'CONTROLS' | 'METRICS' | 'LOGS'>('CONTROLS');
+  const [initialQueueInput, setInitialQueueInput] = useState<number>(0);
 
   const activeComparison =
     comparisons.find((c) => c.id === activeComparisonId) ||
@@ -63,7 +95,11 @@ export const DigitalTwinView: React.FC = () => {
       const rect = canvas.parentElement?.getBoundingClientRect();
       if (rect) {
         renderer.resize(rect.width, rect.height);
-        renderer.fitToView(currentVenue, rect.width, rect.height);
+        if (focusedSide !== 'ALL' && selectedGateIds.length > 0) {
+          renderer.fitToGateArea(selectedGateIds, currentVenue, rect.width, rect.height);
+        } else {
+          renderer.fitToView(currentVenue, rect.width, rect.height);
+        }
       }
     };
 
@@ -74,6 +110,19 @@ export const DigitalTwinView: React.FC = () => {
       window.removeEventListener('resize', handleResize);
     };
   }, [currentVenue.id]);
+
+  // Auto-focus camera when side or gates change
+  useEffect(() => {
+    if (!rendererRef.current || !canvasRef.current) return;
+    const rect = canvasRef.current.parentElement?.getBoundingClientRect();
+    if (!rect) return;
+
+    if (focusedSide !== 'ALL' && selectedGateIds.length > 0) {
+      rendererRef.current.fitToGateArea(selectedGateIds, currentVenue, rect.width, rect.height);
+    } else {
+      rendererRef.current.fitToView(currentVenue, rect.width, rect.height);
+    }
+  }, [focusedSide, selectedGateIds, currentVenue.id]);
 
   // Render loop
   useEffect(() => {
@@ -89,7 +138,8 @@ export const DigitalTwinView: React.FC = () => {
           selectedGateId,
           selectedZoneId,
           engine.state.incidents,
-          layers.spatialComparison ? activeComparison?.zoneComparisons : null
+          layers.spatialComparison ? activeComparison?.zoneComparisons : null,
+          selectedGateIds
         );
       }
       animId = requestAnimationFrame(renderLoop);
@@ -97,7 +147,7 @@ export const DigitalTwinView: React.FC = () => {
 
     animId = requestAnimationFrame(renderLoop);
     return () => cancelAnimationFrame(animId);
-  }, [layers, detailLevel, selectedGateId, selectedZoneId, activeComparison]);
+  }, [layers, detailLevel, selectedGateId, selectedZoneId, activeComparison, selectedGateIds, focusedSide]);
 
   // Canvas Mouse Controls (Pan, Zoom, Select)
   const handleMouseDown = (e: React.MouseEvent<HTMLCanvasElement>) => {
@@ -191,10 +241,142 @@ export const DigitalTwinView: React.FC = () => {
   const selectedGate = currentVenue.gates.find((g) => g.id === selectedGateId);
   const selectedZone = currentVenue.zones.find((z) => z.id === selectedZoneId);
 
+  const focusedGates = currentVenue.gates.filter((g) => selectedGateIds.includes(g.id));
+  const primaryGate = focusedGates[0] || selectedGate;
+  const totalFocusedQueue = focusedGates.reduce((acc, g) => acc + g.currentQueue, 0);
+  const maxFocusedQueue = Math.max(0, ...focusedGates.map((g) => g.maxQueueRecorded || g.currentQueue));
+  const totalFocusedActiveScanners = focusedGates.reduce((acc, g) => acc + g.operationalScanners, 0);
+  const totalFocusedMaxScanners = focusedGates.reduce((acc, g) => acc + g.scannerCount, 0);
+  const ratePerSec = gateSideConfig.processingRatePerSec;
+  const totalProcessingCapPerMin = Math.round(ratePerSec * totalFocusedActiveScanners * 60);
+  const netRatePerMin = gateSideConfig.inflowRatePerMin - totalProcessingCapPerMin;
+  const estWaitMins = totalProcessingCapPerMin > 0 ? (totalFocusedQueue / totalProcessingCapPerMin) : 0;
+  const totalSpillback = focusedGates.reduce((acc, g) => acc + (g.spillbackCount || 0), 0);
+  const totalArrivals = focusedGates.reduce((acc, g) => acc + (g.totalArrivalsCount || 0), 0);
+  const totalProcessed = focusedGates.reduce((acc, g) => acc + (g.totalProcessedCount || 0), 0);
+
   return (
-    <div className="relative w-full h-[calc(100vh-4rem)] bg-navy-950 overflow-hidden flex">
-      {/* Canvas Viewport */}
-      <div className="relative flex-1 h-full">
+    <div className="relative w-full h-[calc(100vh-4rem)] bg-navy-950 overflow-hidden flex flex-col">
+      {/* Stadium Side & Focused Gate-Side Simulation Selector Bar */}
+      <div className="bg-navy-900 border-b border-navy-700 px-4 py-2 flex flex-wrap items-center justify-between gap-2.5 text-xs shrink-0 z-20 shadow-md">
+        <div className="flex items-center gap-2 overflow-x-auto pb-1 sm:pb-0">
+          <span className="text-slate-400 font-semibold uppercase text-[10px] tracking-wider shrink-0 flex items-center gap-1.5">
+            <Compass className="w-3.5 h-3.5 text-cyan-400" />
+            Simulation Focus:
+          </span>
+
+          <div className="flex items-center gap-1 bg-navy-950 p-1 rounded-xl border border-navy-800">
+            <button
+              onClick={() => {
+                setFocusedSide('ALL');
+                if (rendererRef.current && canvasRef.current) {
+                  const rect = canvasRef.current.parentElement?.getBoundingClientRect();
+                  if (rect) rendererRef.current.fitToView(currentVenue, rect.width, rect.height);
+                }
+              }}
+              className={`px-3 py-1 rounded-lg font-bold transition flex items-center gap-1.5 ${
+                focusedSide === 'ALL'
+                  ? 'bg-cyan-600 text-white shadow-sm'
+                  : 'text-slate-400 hover:text-slate-200'
+              }`}
+            >
+              <Maximize2 className="w-3 h-3" />
+              <span>Full Stadium (21 Gates)</span>
+            </button>
+
+            <button
+              onClick={() => setFocusedSide('NORTH')}
+              className={`px-3 py-1 rounded-lg font-bold transition ${
+                focusedSide === 'NORTH'
+                  ? 'bg-blue-600 text-white shadow-sm'
+                  : 'text-slate-400 hover:text-slate-200'
+              }`}
+            >
+              North (Gates 1-5)
+            </button>
+
+            <button
+              onClick={() => setFocusedSide('WEST')}
+              className={`px-3 py-1 rounded-lg font-bold transition ${
+                focusedSide === 'WEST'
+                  ? 'bg-indigo-600 text-white shadow-sm'
+                  : 'text-slate-400 hover:text-slate-200'
+              }`}
+            >
+              West (Gates 6-10)
+            </button>
+
+            <button
+              onClick={() => setFocusedSide('SOUTH')}
+              className={`px-3 py-1 rounded-lg font-bold transition ${
+                focusedSide === 'SOUTH'
+                  ? 'bg-purple-600 text-white shadow-sm'
+                  : 'text-slate-400 hover:text-slate-200'
+              }`}
+            >
+              South (Gates 11-16)
+            </button>
+
+            <button
+              onClick={() => setFocusedSide('EAST')}
+              className={`px-3 py-1 rounded-lg font-bold transition ${
+                focusedSide === 'EAST'
+                  ? 'bg-amber-600 text-white shadow-sm'
+                  : 'text-slate-400 hover:text-slate-200'
+              }`}
+            >
+              East (Gates 17-21)
+            </button>
+          </div>
+        </div>
+
+        {/* Focused Gate Controls & Return to Full Stadium Button */}
+        <div className="flex items-center gap-2">
+          {focusedSide !== 'ALL' && (
+            <button
+              onClick={() => {
+                setFocusedSide('ALL');
+                if (rendererRef.current && canvasRef.current) {
+                  const rect = canvasRef.current.parentElement?.getBoundingClientRect();
+                  if (rect) rendererRef.current.fitToView(currentVenue, rect.width, rect.height);
+                }
+              }}
+              className="px-3 py-1.5 rounded-xl bg-navy-800 hover:bg-navy-700 border border-cyan-500/50 text-cyan-300 font-bold transition flex items-center gap-1.5 shadow"
+            >
+              <RotateCcw className="w-3.5 h-3.5" />
+              <span>Return to Full Stadium</span>
+            </button>
+          )}
+
+          {/* Clock Display */}
+          <div className="flex items-center gap-1.5 bg-navy-950 px-2.5 py-1 rounded-xl border border-navy-800 font-mono text-[11px]">
+            <Clock className="w-3 h-3 text-cyan-400" />
+            <span className="text-slate-400">Time:</span>
+            <span className="font-bold text-cyan-300">
+              {Math.floor(simTimeSecs / 60).toString().padStart(2, '0')}:{(simTimeSecs % 60).toString().padStart(2, '0')}
+            </span>
+          </div>
+
+          {/* Play/Pause Button */}
+          <button
+            onClick={() =>
+              isRunning && !isPaused ? pauseSimulation() : isRunning ? resumeSimulation() : startSimulation()
+            }
+            className={`px-3 py-1.5 rounded-xl font-bold transition flex items-center gap-1.5 shadow ${
+              isRunning && !isPaused
+                ? 'bg-amber-600 hover:bg-amber-500 text-white'
+                : 'bg-emerald-600 hover:bg-emerald-500 text-white'
+            }`}
+          >
+            {isRunning && !isPaused ? <Pause className="w-3 h-3" /> : <Play className="w-3 h-3" />}
+            <span>{isRunning && !isPaused ? 'Pause' : isRunning ? 'Resume' : 'Run'}</span>
+          </button>
+        </div>
+      </div>
+
+      <div className="relative flex-1 w-full h-full overflow-hidden flex">
+        {/* Canvas Viewport */}
+        <div className="relative flex-1 h-full">
         <canvas
           ref={canvasRef}
           onMouseDown={handleMouseDown}
@@ -354,28 +536,512 @@ export const DigitalTwinView: React.FC = () => {
         </div>
       </div>
 
-      {/* Right Properties & Inspection Drawer */}
-      <div className="w-84 md:w-96 bg-navy-850 border-l border-navy-600 h-full overflow-y-auto p-4 flex flex-col justify-between shrink-0 select-none z-10">
+      {/* Right Properties & Gate-Side Simulation Control Dashboard */}
+      <div className="w-88 md:w-[420px] bg-navy-850 border-l border-navy-600 h-full overflow-y-auto p-4 flex flex-col justify-between shrink-0 select-none z-10 space-y-4">
         <div>
-          {/* Header */}
-          <div className="flex items-center justify-between border-b border-navy-700 pb-3 mb-4">
-            <div className="flex items-center gap-2">
-              <Sliders className="w-4 h-4 text-cyan-400" />
-              <h3 className="font-bold text-slate-100 text-sm">Twin Object Inspector</h3>
-            </div>
-            {(selectedGate || selectedZone) && (
-              <button
-                onClick={() => {
-                  setSelectedGateId(null);
-                  setSelectedZoneId(null);
-                }}
-                className="text-xs text-slate-400 hover:text-white"
-              >
-                Clear
-              </button>
-            )}
-          </div>
+          {/* FOCUSED GATE-SIDE SIMULATION PANEL */}
+          {focusedSide !== 'ALL' || selectedGateIds.length > 0 ? (
+            <div className="space-y-4 text-xs">
+              {/* Header Card */}
+              <div className="p-3.5 bg-navy-900 border border-cyan-500/30 rounded-xl space-y-2 shadow-lg">
+                <div className="flex justify-between items-start">
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <DoorOpen className="w-4 h-4 text-cyan-400" />
+                      <h3 className="font-extrabold text-slate-100 text-base">
+                        {focusedSide !== 'CUSTOM' ? `${focusedSide} SIDE SIMULATION` : 'CUSTOM GATE GROUP'}
+                      </h3>
+                    </div>
+                    <span className="text-[11px] text-slate-400 block mt-0.5">
+                      {focusedGates.length} Gate{focusedGates.length > 1 ? 's' : ''} Selected ({focusedGates.map((g) => g.name).join(', ')})
+                    </span>
+                  </div>
 
+                  <span
+                    className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${
+                      focusedGates.some((g) => g.warningLevel === 'CRITICAL')
+                        ? 'bg-red-950 text-red-300 border-red-700 animate-pulse'
+                        : focusedGates.some((g) => g.warningLevel === 'HIGH')
+                          ? 'bg-amber-950 text-amber-300 border-amber-700'
+                          : 'bg-emerald-950 text-emerald-300 border-emerald-700'
+                    }`}
+                  >
+                    {focusedGates.every((g) => g.status === 'OPERATIONAL') ? 'OPERATIONAL' : 'ACTIVE SIMULATION'}
+                  </span>
+                </div>
+
+                {/* Gate Selection Pills */}
+                <div className="flex flex-wrap gap-1 pt-1 border-t border-navy-800">
+                  {SIDE_GATES[focusedSide !== 'CUSTOM' ? focusedSide : 'NORTH'].map((gid) => {
+                    const isChecked = selectedGateIds.includes(gid);
+                    const gateName = currentVenue.gates.find((g) => g.id === gid)?.name || gid;
+                    return (
+                      <button
+                        key={gid}
+                        onClick={() => {
+                          const next = isChecked
+                            ? selectedGateIds.filter((id) => id !== gid)
+                            : [...selectedGateIds, gid];
+                          setSelectedGateIds(next);
+                        }}
+                        className={`px-2 py-0.5 rounded text-[10px] font-semibold border transition ${
+                          isChecked
+                            ? 'bg-cyan-600 text-white border-cyan-400'
+                            : 'bg-navy-950 text-slate-400 border-navy-700 hover:text-slate-200'
+                        }`}
+                      >
+                        {gateName}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Sub-Tabs: Controls, Live Metrics, Event Log */}
+              <div className="flex items-center gap-1 bg-navy-950 p-1 rounded-xl border border-navy-700">
+                <button
+                  onClick={() => setActiveSideTab('CONTROLS')}
+                  className={`flex-1 py-1.5 rounded-lg font-bold text-center transition ${
+                    activeSideTab === 'CONTROLS'
+                      ? 'bg-cyan-600 text-white shadow'
+                      : 'text-slate-400 hover:text-slate-200'
+                  }`}
+                >
+                  Inflow &amp; Capacity
+                </button>
+                <button
+                  onClick={() => setActiveSideTab('METRICS')}
+                  className={`flex-1 py-1.5 rounded-lg font-bold text-center transition ${
+                    activeSideTab === 'METRICS'
+                      ? 'bg-cyan-600 text-white shadow'
+                      : 'text-slate-400 hover:text-slate-200'
+                  }`}
+                >
+                  Live Metrics
+                </button>
+                <button
+                  onClick={() => setActiveSideTab('LOGS')}
+                  className={`flex-1 py-1.5 rounded-lg font-bold text-center transition ${
+                    activeSideTab === 'LOGS'
+                      ? 'bg-cyan-600 text-white shadow'
+                      : 'text-slate-400 hover:text-slate-200'
+                  }`}
+                >
+                  Event Log ({gateSideEvents.length})
+                </button>
+              </div>
+
+              {/* TAB 1: INFLOW & CAPACITY CONTROLS */}
+              {activeSideTab === 'CONTROLS' && (
+                <div className="space-y-3.5">
+                  {/* Inflow Rate Control Card */}
+                  <div className="p-3 bg-navy-900 border border-navy-700 rounded-xl space-y-2.5">
+                    <div className="flex justify-between items-center">
+                      <span className="font-bold text-slate-200 flex items-center gap-1.5">
+                        <Users className="w-3.5 h-3.5 text-cyan-400" />
+                        Pedestrian Inflow Rate
+                      </span>
+                      <span className="font-mono font-bold text-cyan-300 text-sm">
+                        {gateSideConfig.inflowRatePerMin}{' '}
+                        <span className="text-[10px] font-normal text-slate-400">ppl/min</span>
+                      </span>
+                    </div>
+
+                    <div className="flex items-center gap-3">
+                      <input
+                        type="range"
+                        min="10"
+                        max="600"
+                        step="10"
+                        value={gateSideConfig.inflowRatePerMin}
+                        onChange={(e) => updateGateSideConfig({ inflowRatePerMin: Number(e.target.value) })}
+                        className="flex-1 accent-cyan-500 cursor-pointer"
+                      />
+                      <input
+                        type="number"
+                        min="10"
+                        max="1000"
+                        value={gateSideConfig.inflowRatePerMin}
+                        onChange={(e) => updateGateSideConfig({ inflowRatePerMin: Number(e.target.value) })}
+                        className="w-16 bg-navy-950 border border-navy-700 rounded px-1.5 py-0.5 text-cyan-300 font-mono text-center"
+                      />
+                    </div>
+
+                    {/* Quick Inflow Presets */}
+                    <div className="grid grid-cols-4 gap-1 text-[10px]">
+                      {[
+                        { label: '60/min', val: 60 },
+                        { label: '100/min', val: 100 },
+                        { label: '200/min', val: 200 },
+                        { label: '350/min', val: 350 },
+                      ].map((preset) => (
+                        <button
+                          key={preset.val}
+                          onClick={() => updateGateSideConfig({ inflowRatePerMin: preset.val })}
+                          className={`py-1 rounded border transition font-medium ${
+                            gateSideConfig.inflowRatePerMin === preset.val
+                              ? 'bg-cyan-950 text-cyan-300 border-cyan-700 font-bold'
+                              : 'bg-navy-950 text-slate-400 border-navy-800 hover:text-white'
+                          }`}
+                        >
+                          {preset.label}
+                        </button>
+                      ))}
+                    </div>
+
+                    {/* Arrival Pattern Selector */}
+                    <div className="pt-2 border-t border-navy-800">
+                      <label className="text-[11px] text-slate-400 block mb-1">Arrival Wave Pattern:</label>
+                      <select
+                        value={gateSideConfig.arrivalPattern}
+                        onChange={(e) =>
+                          updateGateSideConfig({ arrivalPattern: e.target.value as ArrivalPatternType })
+                        }
+                        className="w-full bg-navy-950 border border-navy-700 rounded-lg px-2 py-1 text-slate-200 text-xs focus:outline-none"
+                      >
+                        <option value="GRADUAL">Gradual Consistent Inflow</option>
+                        <option value="PEAK_SURGE">Peak Surge Curve</option>
+                        <option value="BURST">Periodic Burst Waves</option>
+                        <option value="TRANSPORT_PULSE">Metro Transit Pulses</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  {/* Processing Capacity Control Card */}
+                  <div className="p-3 bg-navy-900 border border-navy-700 rounded-xl space-y-2.5">
+                    <div className="flex justify-between items-center">
+                      <span className="font-bold text-slate-200 flex items-center gap-1.5">
+                        <Activity className="w-3.5 h-3.5 text-emerald-400" />
+                        Ticket-Processing Capacity
+                      </span>
+                      <span className="font-mono font-bold text-emerald-400 text-sm">
+                        {totalProcessingCapPerMin}{' '}
+                        <span className="text-[10px] font-normal text-slate-400">ppl/min</span>
+                      </span>
+                    </div>
+
+                    {/* Theoretical Formula Box */}
+                    <div className="bg-navy-950 p-2 rounded-lg border border-navy-800 text-[11px] space-y-1">
+                      <div className="flex justify-between text-slate-400">
+                        <span>Speed per Counter:</span>
+                        <strong className="text-cyan-300 font-mono">
+                          {ratePerSec.toFixed(1)} person/sec ({Math.round(ratePerSec * 60)} ppl/min)
+                        </strong>
+                      </div>
+                      <div className="flex justify-between text-slate-400">
+                        <span>Active Counters:</span>
+                        <strong className="text-slate-200 font-mono">
+                          {totalFocusedActiveScanners} / {totalFocusedMaxScanners} lanes
+                        </strong>
+                      </div>
+                      <div className="pt-1 border-t border-navy-800 text-[10px] text-slate-400">
+                        Formula: {ratePerSec.toFixed(1)} p/s × {totalFocusedActiveScanners} counters × 60 ={' '}
+                        <strong className="text-emerald-300 font-mono">{totalProcessingCapPerMin} ppl/min</strong>
+                      </div>
+                    </div>
+
+                    {/* Counter Speed Slider */}
+                    <div>
+                      <div className="flex justify-between text-[11px] text-slate-400 mb-1">
+                        <span>Processing Speed per Counter:</span>
+                        <span className="font-mono text-cyan-300">{ratePerSec.toFixed(1)} person/sec</span>
+                      </div>
+                      <input
+                        type="range"
+                        min="0.2"
+                        max="3.0"
+                        step="0.1"
+                        value={gateSideConfig.processingRatePerSec}
+                        onChange={(e) => updateGateSideConfig({ processingRatePerSec: Number(e.target.value) })}
+                        className="w-full accent-cyan-500 cursor-pointer"
+                      />
+                    </div>
+
+                    {/* Active Scanners Slider */}
+                    <div>
+                      <div className="flex justify-between text-[11px] text-slate-400 mb-1">
+                        <span>Active Counters in Gate Group:</span>
+                        <span className="font-mono text-slate-200">
+                          {totalFocusedActiveScanners} operational
+                        </span>
+                      </div>
+                      <input
+                        type="range"
+                        min="0"
+                        max={totalFocusedMaxScanners}
+                        value={totalFocusedActiveScanners}
+                        onChange={(e) =>
+                          updateGateSideConfig({ operationalScannersOverride: Number(e.target.value) })
+                        }
+                        className="w-full accent-emerald-500 cursor-pointer"
+                      />
+                    </div>
+
+                    {/* Quick Tactical Fault Actions */}
+                    <div className="grid grid-cols-2 gap-1.5 pt-1">
+                      <button
+                        onClick={() => {
+                          const target = focusedGates[0];
+                          if (target) {
+                            const newCount = Math.max(0, target.operationalScanners - 1);
+                            updateGate(target.id, {
+                              operationalScanners: newCount,
+                              status: newCount === 0 ? 'SCANNER_FAILURE' : 'BUSY',
+                            });
+                            engine.logGateSideEvent('COUNTER_FAILURE', `Scanner counter offline at ${target.name} (Active: ${newCount})`);
+                          }
+                        }}
+                        className="py-1 px-2 rounded-lg bg-amber-950/80 hover:bg-amber-900 border border-amber-700/60 text-amber-200 font-semibold text-[11px] transition text-center"
+                      >
+                        Fail 1 Counter
+                      </button>
+
+                      <button
+                        onClick={() => {
+                          focusedGates.forEach((g) => {
+                            updateGate(g.id, {
+                              operationalScanners: g.scannerCount,
+                              status: 'OPERATIONAL',
+                            });
+                          });
+                          engine.logGateSideEvent('COUNTER_RESTORED', 'All scanner counters restored to full operation');
+                        }}
+                        className="py-1 px-2 rounded-lg bg-emerald-950/80 hover:bg-emerald-900 border border-emerald-700/60 text-emerald-200 font-semibold text-[11px] transition text-center"
+                      >
+                        Restore Counters
+                      </button>
+
+                      <button
+                        onClick={() => {
+                          const target = focusedGates[0];
+                          if (target) {
+                            const isClosed = target.direction === 'CLOSED';
+                            updateGate(target.id, {
+                              direction: isClosed ? 'ENTRY' : 'CLOSED',
+                              status: isClosed ? 'OPERATIONAL' : 'TEMPORARILY_CLOSED',
+                            });
+                            engine.logGateSideEvent(
+                              isClosed ? 'GATE_OPENED' : 'GATE_CLOSED',
+                              `${target.name} ${isClosed ? 'reopened for admission' : 'closed by operator'}`
+                            );
+                          }
+                        }}
+                        className="py-1 px-2 rounded-lg bg-red-950/80 hover:bg-red-900 border border-red-700/60 text-red-200 font-semibold text-[11px] transition text-center"
+                      >
+                        {primaryGate?.direction === 'CLOSED' ? 'Reopen Gate' : 'Close Gate'}
+                      </button>
+
+                      <button
+                        onClick={() => resetGateSideSim()}
+                        className="py-1 px-2 rounded-lg bg-navy-800 hover:bg-navy-700 border border-navy-700 text-slate-300 font-semibold text-[11px] transition text-center flex items-center justify-center gap-1"
+                      >
+                        <RefreshCw className="w-3 h-3" />
+                        <span>Reset Queues</span>
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Initial Queue Input Card */}
+                  <div className="p-3 bg-navy-900 border border-navy-700 rounded-xl space-y-2">
+                    <span className="font-bold text-slate-200 block">Initial Waiting Queue</span>
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="number"
+                        min="0"
+                        max="2000"
+                        step="10"
+                        value={initialQueueInput}
+                        onChange={(e) => setInitialQueueInput(Number(e.target.value))}
+                        className="w-24 bg-navy-950 border border-navy-700 rounded-lg px-2 py-1 text-slate-200 font-mono text-xs focus:outline-none"
+                      />
+                      <button
+                        onClick={() => applyInitialQueue(initialQueueInput)}
+                        className="flex-1 py-1.5 rounded-lg bg-cyan-600 hover:bg-cyan-500 font-bold text-white text-xs transition"
+                      >
+                        Apply Initial Queue
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Routing Policy (when multiple gates selected) */}
+                  {focusedGates.length > 1 && (
+                    <div className="p-3 bg-navy-900 border border-navy-700 rounded-xl space-y-2">
+                      <span className="font-bold text-slate-200 block">Multi-Gate Inflow Routing Policy</span>
+                      <div className="grid grid-cols-2 gap-1.5 text-[10px]">
+                        {[
+                          { id: 'SHORTEST_QUEUE', label: 'Shortest Queue' },
+                          { id: 'LEAST_WAIT_TIME', label: 'Lowest Wait Time' },
+                          { id: 'ROUTE_AWARE', label: 'Route & Concourse Aware' },
+                          { id: 'FIXED_ALLOCATION', label: 'Fixed Split' },
+                        ].map((policy) => (
+                          <button
+                            key={policy.id}
+                            onClick={() =>
+                              updateGateSideConfig({ routingPolicy: policy.id as GateRoutingPolicy })
+                            }
+                            className={`p-1.5 rounded-lg border text-left transition ${
+                              gateSideConfig.routingPolicy === policy.id
+                                ? 'bg-cyan-950 text-cyan-300 border-cyan-600 font-bold'
+                                : 'bg-navy-950 text-slate-400 border-navy-800 hover:text-white'
+                            }`}
+                          >
+                            {policy.label}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* TAB 2: LIVE METRICS & MASS BALANCE */}
+              {activeSideTab === 'METRICS' && (
+                <div className="space-y-3">
+                  {/* Queue Balance Bar */}
+                  <div className="p-3 bg-navy-900 border border-navy-700 rounded-xl space-y-2">
+                    <div className="flex justify-between items-center">
+                      <span className="font-bold text-slate-300">Queue Dynamic Balance</span>
+                      <span
+                        className={`font-mono font-bold text-xs flex items-center gap-1 ${
+                          netRatePerMin > 0 ? 'text-amber-400' : 'text-emerald-400'
+                        }`}
+                      >
+                        {netRatePerMin > 0 ? <TrendingUp className="w-3.5 h-3.5" /> : <TrendingDown className="w-3.5 h-3.5" />}
+                        {netRatePerMin > 0 ? `+${netRatePerMin} ppl/min (Growing)` : `${netRatePerMin} ppl/min (Clearing)`}
+                      </span>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-2 text-center">
+                      <div className="bg-navy-950 p-2 rounded-lg border border-navy-800">
+                        <span className="text-[10px] text-slate-400 block">Current Queue</span>
+                        <span className="font-mono text-base font-bold text-slate-100">
+                          {totalFocusedQueue} <span className="text-[10px] font-normal text-slate-400">ppl</span>
+                        </span>
+                      </div>
+                      <div className="bg-navy-950 p-2 rounded-lg border border-navy-800">
+                        <span className="text-[10px] text-slate-400 block">Peak Queue</span>
+                        <span className="font-mono text-base font-bold text-amber-400">
+                          {maxFocusedQueue} <span className="text-[10px] font-normal text-slate-400">ppl</span>
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Wait Time & Spillback */}
+                  <div className="grid grid-cols-2 gap-2">
+                    <div className="p-2.5 bg-navy-900 border border-navy-700 rounded-xl">
+                      <span className="text-[10px] text-slate-400 block">Est. Wait for New Arrival</span>
+                      <span className="font-mono text-sm font-bold text-cyan-300">
+                        ~{Math.round(estWaitMins * 60)}s ({estWaitMins.toFixed(1)}m)
+                      </span>
+                    </div>
+
+                    <div className="p-2.5 bg-navy-900 border border-navy-700 rounded-xl">
+                      <span className="text-[10px] text-slate-400 block">Holding Spillback</span>
+                      <span
+                        className={`font-mono text-sm font-bold ${
+                          totalSpillback > 0 ? 'text-red-400' : 'text-slate-400'
+                        }`}
+                      >
+                        {totalSpillback > 0 ? `+${totalSpillback} overflow` : '0 (Inside Pen)'}
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Throughput Cumulative */}
+                  <div className="p-3 bg-navy-900 border border-navy-700 rounded-xl space-y-1.5 text-xs">
+                    <div className="flex justify-between">
+                      <span className="text-slate-400">Total Arrivals Spawned:</span>
+                      <span className="font-mono font-bold text-slate-200">{totalArrivals}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-slate-400">Admitted &amp; Processed:</span>
+                      <span className="font-mono font-bold text-emerald-400">{totalProcessed}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-slate-400">Currently Waiting in Line:</span>
+                      <span className="font-mono font-bold text-amber-400">{totalFocusedQueue}</span>
+                    </div>
+                  </div>
+
+                  {/* Downstream Passage Status */}
+                  <div className="p-2.5 bg-navy-900 border border-navy-700 rounded-xl space-y-1 text-xs">
+                    <span className="font-bold text-slate-300 block">Downstream Concourse Passage</span>
+                    <p className="text-[11px] text-slate-400 leading-relaxed">
+                      {primaryGate?.suggestedAction || 'Clear traversal corridor. Gate processing unconstrained.'}
+                    </p>
+                  </div>
+
+                  {/* Conservation of People Confirmation Card */}
+                  <div className="p-2.5 bg-emerald-950/40 border border-emerald-700/60 rounded-xl flex items-center gap-2 text-emerald-300 text-xs">
+                    <ShieldCheck className="w-4 h-4 shrink-0 text-emerald-400" />
+                    <span>Conservation Verified: No attendees created or lost in transitions.</span>
+                  </div>
+                </div>
+              )}
+
+              {/* TAB 3: REAL-TIME EVENT LOG */}
+              {activeSideTab === 'LOGS' && (
+                <div className="space-y-2">
+                  <div className="flex justify-between items-center text-[11px] text-slate-400 border-b border-navy-800 pb-1">
+                    <span>Gate Simulation Events ({gateSideEvents.length})</span>
+                    <span className="font-mono">Clock: mm:ss</span>
+                  </div>
+
+                  <div className="space-y-1.5 max-h-96 overflow-y-auto pr-1">
+                    {gateSideEvents.length > 0 ? (
+                      gateSideEvents.map((evt) => (
+                        <div
+                          key={evt.id}
+                          className="p-2 rounded-lg bg-navy-900/90 border border-navy-800 text-[11px] space-y-0.5"
+                        >
+                          <div className="flex justify-between items-center">
+                            <span className="font-mono text-cyan-400 font-bold">{evt.timeFormatted}</span>
+                            <span
+                              className={`text-[9px] font-bold px-1.5 py-0.2 rounded ${
+                                evt.type === 'COUNTER_FAILURE' || evt.type === 'GATE_CLOSED' || evt.type === 'SPILLBACK'
+                                  ? 'bg-red-950 text-red-300 border border-red-800'
+                                  : evt.type === 'COUNTER_RESTORED' || evt.type === 'GATE_OPENED'
+                                    ? 'bg-emerald-950 text-emerald-300 border border-emerald-800'
+                                    : 'bg-navy-950 text-slate-300 border border-navy-700'
+                              }`}
+                            >
+                              {evt.type}
+                            </span>
+                          </div>
+                          <p className="text-slate-300 leading-relaxed">{evt.message}</p>
+                        </div>
+                      ))
+                    ) : (
+                      <p className="text-slate-500 italic text-center py-6">
+                        No events logged yet. Adjust inflow or counters to trigger events.
+                      </p>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+          ) : (
+            /* STANDARD VENUE & ZONE INSPECTOR */
+            <div>
+              <div className="flex items-center justify-between border-b border-navy-700 pb-3 mb-4">
+                <div className="flex items-center gap-2">
+                  <Sliders className="w-4 h-4 text-cyan-400" />
+                  <h3 className="font-bold text-slate-100 text-sm">Twin Object Inspector</h3>
+                </div>
+                {(selectedGate || selectedZone) && (
+                  <button
+                    onClick={() => {
+                      setSelectedGateId(null);
+                      setSelectedZoneId(null);
+                    }}
+                    className="text-xs text-slate-400 hover:text-white"
+                  >
+                    Clear
+                  </button>
+                )}
+              </div>
+        
           {/* 1. GATE INSPECTION PANEL */}
           {selectedGate ? (
             <div className="space-y-4">
@@ -661,14 +1327,17 @@ export const DigitalTwinView: React.FC = () => {
             </div>
           )}
         </div>
-
-        {/* Footer Guidance */}
-        <div className="pt-3 border-t border-navy-700 text-[11px] text-slate-400 flex items-center justify-between">
-          <span>Active Agents: {engine.state.agents.length}</span>
-          <span>Simulation Speed: {engine.state.speedMultiplier}x</span>
-        </div>
-      </div>
+      )}
     </div>
+
+    {/* Footer Guidance */}
+    <div className="pt-3 border-t border-navy-700 text-[11px] text-slate-400 flex items-center justify-between">
+      <span>Active Agents: {engine.state.agents.length}</span>
+      <span>Simulation Speed: {engine.state.speedMultiplier}x</span>
+    </div>
+  </div>
+</div>
+</div>
   );
 };
 

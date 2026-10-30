@@ -57,6 +57,64 @@ export class CanvasRenderer {
     };
   }
 
+  public fitToGateArea(
+    gateIds: string[],
+    venue: Venue,
+    viewWidth: number,
+    viewHeight: number
+  ): void {
+    const selectedGates = venue.gates.filter((g) => gateIds.includes(g.id));
+    if (selectedGates.length === 0) {
+      this.fitToView(venue, viewWidth, viewHeight);
+      return;
+    }
+
+    let minX = Infinity;
+    let maxX = -Infinity;
+    let minY = Infinity;
+    let maxY = -Infinity;
+
+    for (const g of selectedGates) {
+      minX = Math.min(minX, g.position.x);
+      maxX = Math.max(maxX, g.position.x);
+      minY = Math.min(minY, g.position.y);
+      maxY = Math.max(maxY, g.position.y);
+
+      // Include downstream corridor end
+      const corr = venue.corridors.find((c) => c.id === g.downstreamCorridorId);
+      if (corr) {
+        minX = Math.min(minX, corr.end.x);
+        maxX = Math.max(maxX, corr.end.x);
+        minY = Math.min(minY, corr.end.y);
+        maxY = Math.max(maxY, corr.end.y);
+      }
+    }
+
+    // Add margin for approach road and queue pen (30 meters)
+    const margin = 28;
+    minX -= margin;
+    maxX += margin;
+    minY -= margin;
+    maxY += margin;
+
+    const boxW = Math.max(30, maxX - minX);
+    const boxH = Math.max(30, maxY - minY);
+
+    const pad = 60;
+    const availW = Math.max(100, viewWidth - pad * 2);
+    const availH = Math.max(100, viewHeight - pad * 2);
+
+    const scaleX = availW / boxW;
+    const scaleY = availH / boxH;
+    const scale = Math.max(2.5, Math.min(8.5, Math.min(scaleX, scaleY)));
+
+    this.transform = {
+      scale,
+      x: (viewWidth - (minX + maxX) * scale) / 2,
+      y: (viewHeight - (minY + maxY) * scale) / 2,
+    };
+  }
+
   public render(
     venue: Venue,
     agents: CrowdAgent[],
@@ -65,7 +123,8 @@ export class CanvasRenderer {
     selectedGateId?: string | null,
     selectedZoneId?: string | null,
     incidents: Incident[] = [],
-    spatialComparisons?: ZoneComparisonResult[] | null
+    spatialComparisons?: ZoneComparisonResult[] | null,
+    focusedGateIds?: string[]
   ): void {
     const ctx = this.ctx;
     const { width, height } = this.canvas;
@@ -90,6 +149,11 @@ export class CanvasRenderer {
     // 2. Venue Base Layout
     if (layers.venueLayout) {
       this.drawVenueLayout(venue, ctx);
+    }
+
+    // 2b. Focused Gate-Side Detail Layer
+    if (focusedGateIds && focusedGateIds.length > 0) {
+      this.drawFocusedGateSideView(venue, ctx, focusedGateIds, agents);
     }
 
     // 3. Risk Zones Overlay
@@ -839,4 +903,146 @@ export class CanvasRenderer {
 
     ctx.restore();
   }
+
+  private drawFocusedGateSideView(
+    venue: Venue,
+    ctx: CanvasRenderingContext2D,
+    focusedGateIds: string[],
+    agents: CrowdAgent[]
+  ): void {
+    ctx.save();
+    const cx = venue.dimensions.width / 2;
+    const cy = venue.dimensions.height / 2;
+
+    for (const gid of focusedGateIds) {
+      const g = venue.gates.find((gate) => gate.id === gid);
+      if (!g) continue;
+
+      const dirX = g.position.x - cx;
+      const dirY = g.position.y - cy;
+      const len = Math.sqrt(dirX * dirX + dirY * dirY) || 1;
+      const nx = dirX / len;
+      const ny = dirY / len;
+      const tx = -ny;
+      const ty = nx;
+
+      const penLength = 22; // meters back for designated queue pen
+      const penWidth = g.width + 4;
+
+      // 1. Designated Queue Pen Boundary
+      ctx.save();
+      ctx.strokeStyle = g.warningLevel === 'CRITICAL' ? '#EF4444' : g.warningLevel === 'HIGH' ? '#F59E0B' : '#06B6D4';
+      ctx.fillStyle = 'rgba(6, 182, 212, 0.06)';
+      ctx.lineWidth = 1.5;
+      ctx.setLineDash([2, 2]);
+
+      const p1 = { x: g.position.x - tx * (penWidth / 2), y: g.position.y - ty * (penWidth / 2) };
+      const p2 = { x: g.position.x + tx * (penWidth / 2), y: g.position.y + ty * (penWidth / 2) };
+      const p3 = { x: p2.x + nx * penLength, y: p2.y + ny * penLength };
+      const p4 = { x: p1.x + nx * penLength, y: p1.y + ny * penLength };
+
+      ctx.beginPath();
+      ctx.moveTo(p1.x, p1.y);
+      ctx.lineTo(p2.x, p2.y);
+      ctx.lineTo(p3.x, p3.y);
+      ctx.lineTo(p4.x, p4.y);
+      ctx.closePath();
+      ctx.fill();
+      ctx.stroke();
+
+      // Pen Label
+      ctx.fillStyle = '#67E8F9';
+      ctx.font = 'bold 2.4px Inter, sans-serif';
+      ctx.textAlign = 'center';
+      const labelPos = { x: g.position.x + nx * (penLength + 2.5), y: g.position.y + ny * (penLength + 2.5) };
+      ctx.fillText(`${g.name} Queue Pen (Cap: ${g.queueAreaCapacity || 80} ppl)`, labelPos.x, labelPos.y);
+
+      // 2. Queue Spillback Hazard Area (when currentQueue > queueAreaCapacity)
+      if (g.spillbackCount && g.spillbackCount > 0) {
+        const spillLen = Math.min(30, g.spillbackCount * 0.35);
+        const s3 = { x: p2.x + nx * (penLength + spillLen), y: p2.y + ny * (penLength + spillLen) };
+        const s4 = { x: p1.x + nx * (penLength + spillLen), y: p1.y + ny * (penLength + spillLen) };
+
+        ctx.fillStyle = 'rgba(239, 68, 68, 0.22)';
+        ctx.strokeStyle = '#EF4444';
+        ctx.lineWidth = 1.8;
+        ctx.beginPath();
+        ctx.moveTo(p4.x, p4.y);
+        ctx.lineTo(p3.x, p3.y);
+        ctx.lineTo(s3.x, s3.y);
+        ctx.lineTo(s4.x, s4.y);
+        ctx.closePath();
+        ctx.fill();
+        ctx.stroke();
+
+        ctx.fillStyle = '#FCA5A5';
+        ctx.font = 'bold 2.3px Inter, sans-serif';
+        ctx.fillText(`⚠ SPILLBACK OVERFLOW: +${g.spillbackCount} PPL IN APPROACH PLAZA`, labelPos.x + nx * 5, labelPos.y + ny * 5);
+      }
+
+      // 3. Processing Lanes, Counter Desks & LED Lights
+      const lanes = Math.max(1, g.scannerCount);
+      for (let l = 0; l < lanes; l++) {
+        const offsetT = ((l - (lanes - 1) / 2) / lanes) * (g.width * 0.75);
+        const laneCenterX = g.position.x + tx * offsetT;
+        const laneCenterY = g.position.y + ty * offsetT;
+
+        // Lane divider ropes / stanchions extending back 16m
+        ctx.strokeStyle = 'rgba(100, 116, 139, 0.4)';
+        ctx.lineWidth = 0.5;
+        ctx.setLineDash([1, 1]);
+        ctx.beginPath();
+        ctx.moveTo(laneCenterX, laneCenterY);
+        ctx.lineTo(laneCenterX + nx * 16, laneCenterY + ny * 16);
+        ctx.stroke();
+
+        // Counter Desk (physical desk block)
+        const isCounterActive =
+          l < g.operationalScanners && g.direction !== 'CLOSED' && g.status !== 'TEMPORARILY_CLOSED';
+        ctx.fillStyle = isCounterActive ? '#1E293B' : '#450A0A';
+        ctx.strokeStyle = isCounterActive ? '#38BDF8' : '#EF4444';
+        ctx.lineWidth = 0.8;
+        ctx.setLineDash([]);
+
+        ctx.beginPath();
+        ctx.arc(laneCenterX, laneCenterY, 1.0, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.stroke();
+
+        // Status LED light on desk
+        ctx.fillStyle = isCounterActive ? '#10B981' : '#EF4444';
+        ctx.beginPath();
+        ctx.arc(laneCenterX, laneCenterY, 0.4, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Lane Number
+        ctx.fillStyle = '#FFFFFF';
+        ctx.font = 'bold 1.6px monospace';
+        ctx.textAlign = 'center';
+        ctx.fillText(`L${l + 1}`, laneCenterX - nx * 1.5, laneCenterY - ny * 1.5);
+      }
+
+      // 4. Downstream Corridor Connection into Concourse
+      const corr = venue.corridors.find((c) => c.id === g.downstreamCorridorId);
+      if (corr) {
+        ctx.strokeStyle = corr.isBlocked ? 'rgba(239, 68, 68, 0.7)' : 'rgba(16, 185, 129, 0.7)';
+        ctx.lineWidth = corr.width * 0.6;
+        ctx.setLineDash([2, 1]);
+        ctx.beginPath();
+        ctx.moveTo(g.position.x, g.position.y);
+        ctx.lineTo(corr.end.x, corr.end.y);
+        ctx.stroke();
+
+        ctx.fillStyle = corr.isBlocked ? '#FCA5A5' : '#86EFAC';
+        ctx.font = '2.0px Inter, sans-serif';
+        const midCorrX = (g.position.x + corr.end.x) / 2;
+        const midCorrY = (g.position.y + corr.end.y) / 2;
+        ctx.fillText(corr.isBlocked ? 'BLOCKED CORRIDOR' : 'Downstream Passage', midCorrX, midCorrY);
+      }
+
+      ctx.restore();
+    }
+    ctx.restore();
+  }
+
 }

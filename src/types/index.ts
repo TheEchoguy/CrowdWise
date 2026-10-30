@@ -34,6 +34,13 @@ export interface Gate {
   externalApproachId?: string;
   failureDurationSecs?: number;
   suggestedAction?: string;
+  scannerProcessingRatePerSec?: number;
+  initialQueue?: number;
+  totalArrivalsCount?: number;
+  totalProcessedCount?: number;
+  maxQueueRecorded?: number;
+  queueAreaCapacity?: number;
+  spillbackCount?: number;
 }
 
 export type ZoneRiskLevel = 'NORMAL' | 'WATCH' | 'HIGH_CONGESTION' | 'CRITICAL';
@@ -389,3 +396,41 @@ export interface RenderLayers {
 }
 
 export type RenderDetailLevel = 'DETAILED' | 'SIMPLIFIED' | 'DENSITY_ONLY';
+
+export type StadiumSide = 'ALL' | 'NORTH' | 'WEST' | 'SOUTH' | 'EAST' | 'CUSTOM';
+
+export type GateRoutingPolicy =
+  | 'SHORTEST_QUEUE'
+  | 'LEAST_WAIT_TIME'
+  | 'ROUTE_AWARE'
+  | 'FIXED_ALLOCATION';
+
+export interface GateSideSimConfig {
+  selectedSide: StadiumSide;
+  selectedGateIds: string[];
+  inflowRatePerMin: number;
+  arrivalPattern: ArrivalPatternType;
+  processingRatePerSec: number; // people per second per active scanner (e.g. 1.0)
+  scannerCountOverride?: number;
+  operationalScannersOverride?: number;
+  initialQueue: number;
+  routingPolicy: GateRoutingPolicy;
+  spillbackThreshold: number; // queue count before spillback outside queue pen
+  durationSecs: number;
+}
+
+export interface GateSideEvent {
+  id: string;
+  timestamp: number;
+  timeFormatted: string;
+  type:
+    | 'INFLOW_CHANGE'
+    | 'COUNTER_FAILURE'
+    | 'COUNTER_RESTORED'
+    | 'GATE_CLOSED'
+    | 'GATE_OPENED'
+    | 'SPILLBACK'
+    | 'DOWNSTREAM_HOLD'
+    | 'CONFIG_CHANGE';
+  message: string;
+}
