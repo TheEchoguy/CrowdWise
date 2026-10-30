@@ -11,3 +11,4 @@ Traditional venue safety plans rely on static 2D floor blueprints, while CCTV an
 * **Synthetic Scenario Lab:** Ingests synthetic surge profiles and tests operational failure modes, including sudden influx spikes and barcode scanner/turnstile slowdowns.
 * **Side-by-Side Counterfactual Comparison:** Contrasts a failure-prone baseline scenario against an optimized alternative plan (dynamic gate metering, holding buffers, and auxiliary rerouting).
 * **Actionable Decision Brief:** Outputs clear, comparative risk indicators—peak density, queue spillback distance, and ingress throughput—to support data-backed permit approvals and safety planning.
+
