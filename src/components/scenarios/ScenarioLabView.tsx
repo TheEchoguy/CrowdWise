@@ -35,7 +35,20 @@ export const ScenarioLabView: React.FC = () => {
     comparisons,
     runCounterfactualComparison,
     setActiveTab,
+    layers,
+    toggleLayer,
+    setActiveComparisonId,
   } = useSimulationStore();
+
+  const [zoneFilter, setZoneFilter] = useState<'ALL' | 'RELIEVED' | 'WORSENED_OR_HOTSPOT'>('ALL');
+
+  const handleInspectOnMap = (compId: string) => {
+    setActiveComparisonId(compId);
+    if (!layers.spatialComparison) {
+      toggleLayer('spatialComparison');
+    }
+    setActiveTab('digital-twin');
+  };
 
   const [selectedCategory, setSelectedCategory] = useState<string>('ALL');
   const [isComparing, setIsComparing] = useState(false);
@@ -378,6 +391,189 @@ export const ScenarioLabView: React.FC = () => {
                     </div>
                   </div>
                 </div>
+
+                {/* Transferred Risk & New Hotspot Alert Banner */}
+                {latestComparison.spatialSummary && (
+                  <div
+                    className={`p-4 rounded-xl border space-y-3 ${
+                      latestComparison.spatialSummary.riskTransferred
+                        ? 'bg-red-950/40 border-red-700/80 text-red-200'
+                        : latestComparison.spatialSummary.spatialVerdict === 'IMPROVED'
+                          ? 'bg-emerald-950/40 border-emerald-700/80 text-emerald-200'
+                          : 'bg-navy-900 border-navy-700 text-slate-200'
+                    }`}
+                  >
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-white/10 pb-2.5">
+                      <div className="flex items-center gap-2">
+                        {latestComparison.spatialSummary.riskTransferred ? (
+                          <AlertTriangle className="w-5 h-5 text-red-400 shrink-0" />
+                        ) : (
+                          <ShieldCheck className="w-5 h-5 text-emerald-400 shrink-0" />
+                        )}
+                        <div>
+                          <h4 className="font-bold text-sm text-slate-100">
+                            {latestComparison.spatialSummary.riskTransferred
+                              ? 'Transferred Risk Alert: Secondary Hotspot Created'
+                              : 'Spatial Congestion Assessment'}
+                          </h4>
+                          <span className="text-[11px] text-slate-300">
+                            Spatial Verdict: <strong className="font-mono">{latestComparison.spatialSummary.spatialVerdict}</strong>
+                          </span>
+                        </div>
+                      </div>
+
+                      <button
+                        onClick={() => handleInspectOnMap(latestComparison.id)}
+                        className="px-3 py-1.5 rounded-lg bg-violet-600 hover:bg-violet-500 font-bold text-white text-xs flex items-center gap-1.5 transition shrink-0 shadow"
+                      >
+                        <Split className="w-3.5 h-3.5" />
+                        <span>Inspect on Spatial Diff Map</span>
+                        <ArrowRight className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+
+                    <p className="text-xs text-slate-300 leading-relaxed">
+                      {latestComparison.spatialSummary.plainLanguageSummary}
+                    </p>
+
+                    {/* Summary Metric Counters */}
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-1 text-center">
+                      <div className="bg-navy-950/80 p-2 rounded-lg border border-white/10">
+                        <span className="text-[10px] text-slate-400 block">Relieved Zones</span>
+                        <span className="font-mono text-base font-bold text-emerald-400">
+                          {latestComparison.spatialSummary.relievedZonesCount}
+                        </span>
+                      </div>
+                      <div className="bg-navy-950/80 p-2 rounded-lg border border-white/10">
+                        <span className="text-[10px] text-slate-400 block">New Hotspots</span>
+                        <span className="font-mono text-base font-bold text-red-400">
+                          {latestComparison.spatialSummary.newHotspotCount}
+                        </span>
+                      </div>
+                      <div className="bg-navy-950/80 p-2 rounded-lg border border-white/10">
+                        <span className="text-[10px] text-slate-400 block">Worsened Sectors</span>
+                        <span className="font-mono text-base font-bold text-amber-400">
+                          {latestComparison.spatialSummary.worsenedZonesCount}
+                        </span>
+                      </div>
+                      <div className="bg-navy-950/80 p-2 rounded-lg border border-white/10">
+                        <span className="text-[10px] text-slate-400 block">Stable / Safe</span>
+                        <span className="font-mono text-base font-bold text-slate-300">
+                          {latestComparison.spatialSummary.unchangedZonesCount}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Zone-by-Zone Congestion Delta Table */}
+                {latestComparison.zoneComparisons && latestComparison.zoneComparisons.length > 0 && (
+                  <div className="space-y-3 pt-2">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                      <h4 className="font-bold text-slate-100 text-sm flex items-center gap-2">
+                        <FileSpreadsheet className="w-4 h-4 text-cyan-400" />
+                        Zone-by-Zone Crowd Density &amp; Shift Breakdown
+                      </h4>
+
+                      {/* Filter Pills */}
+                      <div className="flex items-center gap-1 text-[11px]">
+                        {(['ALL', 'RELIEVED', 'WORSENED_OR_HOTSPOT'] as const).map((filter) => (
+                          <button
+                            key={filter}
+                            onClick={() => setZoneFilter(filter)}
+                            className={`px-2.5 py-1 rounded-md font-medium transition ${
+                              zoneFilter === filter
+                                ? 'bg-cyan-600 text-white font-bold'
+                                : 'bg-navy-950 text-slate-400 hover:text-slate-200 border border-navy-700'
+                            }`}
+                          >
+                            {filter === 'ALL'
+                              ? 'All Zones'
+                              : filter === 'RELIEVED'
+                                ? 'Relieved (▼)'
+                                : 'Hotspots / Worsened (▲/!)'}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    <div className="overflow-x-auto max-h-80 overflow-y-auto border border-navy-700 rounded-xl bg-navy-950/70">
+                      <table className="w-full text-left text-xs border-collapse">
+                        <thead className="sticky top-0 bg-navy-900 border-b border-navy-700 text-[10px] text-slate-400 uppercase font-semibold">
+                          <tr>
+                            <th className="py-2.5 px-3">Zone Sector</th>
+                            <th className="py-2.5 px-2">Area</th>
+                            <th className="py-2.5 px-2">Threshold</th>
+                            <th className="py-2.5 px-2">Baseline</th>
+                            <th className="py-2.5 px-2">Plan</th>
+                            <th className="py-2.5 px-2">Delta (Δρ)</th>
+                            <th className="py-2.5 px-2">Status</th>
+                            <th className="py-2.5 px-3">Operational Assessment</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-navy-800 text-slate-300">
+                          {latestComparison.zoneComparisons
+                            .filter((z) => {
+                              if (zoneFilter === 'RELIEVED') return z.status === 'RELIEVED';
+                              if (zoneFilter === 'WORSENED_OR_HOTSPOT')
+                                return z.status === 'NEW_HOTSPOT' || z.status === 'WORSENED';
+                              return true;
+                            })
+                            .map((z) => (
+                              <tr key={z.zoneId} className="hover:bg-navy-900/50 transition">
+                                <td className="py-2 px-3">
+                                  <div className="font-semibold text-slate-200">{z.zoneName}</div>
+                                  <span className="text-[10px] text-slate-500 font-mono">{z.category}</span>
+                                </td>
+                                <td className="py-2 px-2 font-mono text-[11px] text-slate-400">{z.usableAreaSqM}m²</td>
+                                <td className="py-2 px-2 font-mono text-[11px] text-slate-400">{z.maxRecommendedDensity} p/m²</td>
+                                <td className="py-2 px-2 font-mono text-[11px]">
+                                  {z.baselineDensity.toFixed(1)} <span className="text-[9px] text-slate-500">({z.baselineRisk})</span>
+                                </td>
+                                <td className="py-2 px-2 font-mono text-[11px] font-bold text-cyan-300">
+                                  {z.interventionDensity.toFixed(1)} <span className="text-[9px] text-slate-500">({z.interventionRisk})</span>
+                                </td>
+                                <td className="py-2 px-2 font-mono text-[11px] font-bold">
+                                  <span
+                                    className={
+                                      z.deltaDensity > 0
+                                        ? 'text-amber-400'
+                                        : z.deltaDensity < 0
+                                          ? 'text-emerald-400'
+                                          : 'text-slate-400'
+                                    }
+                                  >
+                                    {z.deltaDensity > 0 ? '+' : ''}{z.deltaDensity.toFixed(2)} p/m²
+                                  </span>
+                                </td>
+                                <td className="py-2 px-2">
+                                  <span
+                                    className={`px-2 py-0.5 rounded text-[10px] font-bold inline-block border ${
+                                      z.status === 'NEW_HOTSPOT'
+                                        ? 'bg-red-950 text-red-300 border-red-700'
+                                        : z.status === 'WORSENED'
+                                          ? 'bg-amber-950 text-amber-300 border-amber-700'
+                                          : z.status === 'RELIEVED'
+                                            ? 'bg-emerald-950 text-emerald-300 border-emerald-700'
+                                            : 'bg-slate-800 text-slate-300 border-slate-700'
+                                    }`}
+                                  >
+                                    {z.status === 'NEW_HOTSPOT' && '[!] NEW HOTSPOT'}
+                                    {z.status === 'WORSENED' && '[▲] Worsened'}
+                                    {z.status === 'RELIEVED' && '[▼] Relieved'}
+                                    {z.status === 'UNCHANGED' && '[=] Stable'}
+                                  </span>
+                                </td>
+                                <td className="py-2 px-3 text-[11px] text-slate-400 max-w-xs leading-relaxed">
+                                  {z.description}
+                                </td>
+                              </tr>
+                            ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                )}
               </div>
             ) : (
               <div className="p-8 text-center text-xs text-slate-400 border border-dashed border-navy-700 rounded-xl space-y-2">

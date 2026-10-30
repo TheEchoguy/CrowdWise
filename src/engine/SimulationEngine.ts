@@ -381,16 +381,41 @@ export class SimulationEngine {
     if (rerouteIntervention && targetGate) {
       const sourceIds = (rerouteIntervention.params.sourceGateIds as any as string[]) || [];
       const targetIds = (rerouteIntervention.params.targetGateIds as any as string[]) || [];
-      if (sourceIds.includes(targetGate.id) && targetIds.length > 0) {
-        const altGate = v.gates.find((g) => targetIds.includes(g.id));
-        if (altGate && altGate.status === 'OPERATIONAL' && altGate.currentQueue < targetGate.currentQueue) {
+      const ratio = Number(rerouteIntervention.params.maxDiversionRatio) || 0.6;
+      if (sourceIds.includes(targetGate.id) && targetIds.length > 0 && this.prng.next() <= ratio) {
+        const altGate = v.gates.find((g) => targetIds.includes(g.id) && g.status === 'OPERATIONAL');
+        if (altGate) {
           targetGate = altGate;
         }
       }
     }
 
-    // Compute navigation path from spawn to target gate
-    const path = this.navGraph.findPath({ x: spawnX, y: spawnY }, targetGate.position);
+    // Check OPEN_HOLDING_AREA intervention: redirect approaching agents if gate is congested
+    const holdingIntervention = this.state.interventions.find(
+      (i) => i.category === 'OPEN_HOLDING_AREA' && i.isActive
+    );
+    let targetPos = targetGate.position;
+    let isHoldingRedirect = false;
+    if (
+      holdingIntervention &&
+      (targetGate.currentQueue > 35 || targetGate.warningLevel === 'HIGH' || targetGate.warningLevel === 'CRITICAL')
+    ) {
+      const holdingZone = v.zones.find(
+        (z) => z.id === 'zone-holding-overflow' || z.category === 'HOLDING_AREA'
+      );
+      if (holdingZone && this.prng.next() < 0.45) {
+        let cx = 0, cy = 0;
+        holdingZone.polygon.forEach((p) => { cx += p.x; cy += p.y; });
+        targetPos = {
+          x: cx / holdingZone.polygon.length + this.prng.range(-6, 6),
+          y: cy / holdingZone.polygon.length + this.prng.range(-6, 6),
+        };
+        isHoldingRedirect = true;
+      }
+    }
+
+    // Compute navigation path from spawn to target
+    const path = this.navGraph.findPath({ x: spawnX, y: spawnY }, targetPos);
 
     const agent: CrowdAgent = {
       id: this.nextAgentId++,
@@ -398,12 +423,13 @@ export class SimulationEngine {
       y: spawnY,
       vx: 0,
       vy: 0,
-      targetX: targetGate.position.x,
-      targetY: targetGate.position.y,
+      targetX: targetPos.x,
+      targetY: targetPos.y,
       preferredSpeed: this.prng.range(1.1, 1.45),
       radius: 0.32,
-      state: 'APPROACHING',
-      targetGateId: targetGate.id,
+      state: isHoldingRedirect ? 'DIVERTED' : 'APPROACHING',
+      targetGateId: isHoldingRedirect ? undefined : targetGate.id,
+      targetZoneId: isHoldingRedirect ? 'zone-holding-overflow' : undefined,
       pathWaypoints: path,
       currentWaypointIdx: 0,
       shirtColor: this.prng.choice(SHIRT_COLORS),
@@ -544,10 +570,34 @@ export class SimulationEngine {
           agent.enteredTime = this.state.simTimeSecs;
           g.currentQueue = Math.max(0, g.currentQueue - 1);
 
-          // Route agent to internal concourse or seating
-          const targetZone = this.prng.choice(
-            v.zones.filter((z) => z.category === 'CONCOURSE' || z.category === 'SEATING')
-          );
+          // Route agent to local downstream concourse or nearest concourse sector
+          let targetZone: Zone | null = null;
+          if (g.downstreamCorridorId) {
+            const corr = v.corridors.find((c) => c.id === g.downstreamCorridorId);
+            if (corr) {
+              targetZone = v.zones.find((z) => z.id === corr.toZoneId) || null;
+            }
+          }
+          if (!targetZone) {
+            let minDist = Infinity;
+            v.zones
+              .filter((z) => z.category === 'CONCOURSE')
+              .forEach((z) => {
+                let cx = 0, cy = 0;
+                z.polygon.forEach((p) => { cx += p.x; cy += p.y; });
+                const c = { x: cx / z.polygon.length, y: cy / z.polygon.length };
+                const d = distance(g.position, c);
+                if (d < minDist) {
+                  minDist = d;
+                  targetZone = z;
+                }
+              });
+          }
+          if (!targetZone) {
+            targetZone = this.prng.choice(
+              v.zones.filter((z) => z.category === 'CONCOURSE' || z.category === 'SEATING')
+            );
+          }
           if (targetZone) {
             let cx = 0,
               cy = 0;

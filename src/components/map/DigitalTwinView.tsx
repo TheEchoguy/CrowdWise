@@ -1,5 +1,6 @@
 import React, { useRef, useEffect, useState, useCallback } from 'react';
 import {
+  Split,
   ZoomIn,
   ZoomOut,
   Maximize2,
@@ -39,7 +40,13 @@ export const DigitalTwinView: React.FC = () => {
     updateGate,
     updateZone,
     incidents,
+    comparisons,
+    activeComparisonId,
   } = useSimulationStore();
+
+  const activeComparison =
+    comparisons.find((c) => c.id === activeComparisonId) ||
+    (comparisons.length > 0 ? comparisons[0] : null);
 
   const [showLayerMenu, setShowLayerMenu] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
@@ -81,7 +88,8 @@ export const DigitalTwinView: React.FC = () => {
           detailLevel,
           selectedGateId,
           selectedZoneId,
-          engine.state.incidents
+          engine.state.incidents,
+          layers.spatialComparison ? activeComparison?.zoneComparisons : null
         );
       }
       animId = requestAnimationFrame(renderLoop);
@@ -89,7 +97,7 @@ export const DigitalTwinView: React.FC = () => {
 
     animId = requestAnimationFrame(renderLoop);
     return () => cancelAnimationFrame(animId);
-  }, [layers, detailLevel, selectedGateId, selectedZoneId]);
+  }, [layers, detailLevel, selectedGateId, selectedZoneId, activeComparison]);
 
   // Canvas Mouse Controls (Pan, Zoom, Select)
   const handleMouseDown = (e: React.MouseEvent<HTMLCanvasElement>) => {
@@ -229,6 +237,27 @@ export const DigitalTwinView: React.FC = () => {
             </button>
           </div>
 
+          {/* Spatial Comparison Quick Toggle */}
+          <button
+            onClick={() => toggleLayer('spatialComparison')}
+            title={
+              activeComparison
+                ? 'Toggle Zone-by-Zone Congestion Comparison Overlay'
+                : 'Run a Counterfactual Test in Scenario Lab first to view spatial comparison'
+            }
+            className={`backdrop-blur-md border rounded-xl px-3 py-2 text-xs font-semibold flex items-center gap-2 shadow-xl transition ${
+              layers.spatialComparison
+                ? 'bg-violet-600/90 text-white border-violet-400 ring-2 ring-violet-500/40'
+                : 'bg-navy-850/90 text-slate-300 hover:text-white border-navy-600 hover:border-navy-500'
+            }`}
+          >
+            <Split className="w-4 h-4 text-violet-400" />
+            <span>Spatial Diff {layers.spatialComparison ? '(ON)' : ''}</span>
+            {activeComparison && (
+              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+            )}
+          </button>
+
           {/* Layer Menu Button */}
           <div className="relative">
             <button
@@ -256,6 +285,7 @@ export const DigitalTwinView: React.FC = () => {
                     { key: 'venueLayout', label: 'Venue Layout' },
                     { key: 'animatedCrowd', label: 'Animated Crowd (People)' },
                     { key: 'densityHeatmap', label: 'Density Heatmap' },
+                    { key: 'spatialComparison', label: 'Spatial Delta & New Hotspots' },
                     { key: 'flowArrows', label: 'Movement Flow Arrows' },
                     { key: 'queueVisuals', label: 'Entrance Queues' },
                     { key: 'gateStatus', label: 'Gate Status Badges' },
@@ -519,6 +549,60 @@ export const DigitalTwinView: React.FC = () => {
                   <span className="font-mono text-slate-200">{selectedZone.avgMovementSpeed} m/s</span>
                 </div>
               </div>
+
+              {/* Counterfactual Spatial Comparison Data */}
+              {activeComparison && (() => {
+                const zoneComp = activeComparison.zoneComparisons.find((c) => c.zoneId === selectedZone.id);
+                if (!zoneComp) return null;
+                return (
+                  <div className="p-3 bg-navy-900/90 border border-violet-700/60 rounded-xl space-y-2.5 text-xs">
+                    <div className="flex items-center justify-between border-b border-navy-800 pb-1.5">
+                      <span className="font-bold text-violet-300 flex items-center gap-1.5">
+                        <Split className="w-3.5 h-3.5" />
+                        Counterfactual Delta
+                      </span>
+                      <span
+                        className={`px-2 py-0.5 rounded text-[10px] font-bold border ${
+                          zoneComp.status === 'NEW_HOTSPOT'
+                            ? 'bg-red-950 text-red-300 border-red-700'
+                            : zoneComp.status === 'WORSENED'
+                              ? 'bg-amber-950 text-amber-300 border-amber-700'
+                              : zoneComp.status === 'RELIEVED'
+                                ? 'bg-emerald-950 text-emerald-300 border-emerald-700'
+                                : 'bg-slate-800 text-slate-300 border-slate-700'
+                        }`}
+                      >
+                        {zoneComp.status}
+                      </span>
+                    </div>
+
+                    <div className="grid grid-cols-3 gap-1.5 text-center">
+                      <div className="bg-navy-950 p-1.5 rounded border border-navy-800">
+                        <span className="text-[10px] text-slate-400 block">Baseline</span>
+                        <span className="font-mono font-bold text-slate-200">{zoneComp.baselineDensity.toFixed(1)}</span>
+                      </div>
+                      <div className="bg-navy-950 p-1.5 rounded border border-navy-800">
+                        <span className="text-[10px] text-slate-400 block">Plan</span>
+                        <span className="font-mono font-bold text-cyan-300">{zoneComp.interventionDensity.toFixed(1)}</span>
+                      </div>
+                      <div className="bg-navy-950 p-1.5 rounded border border-navy-800">
+                        <span className="text-[10px] text-slate-400 block">Delta (Δρ)</span>
+                        <span
+                          className={`font-mono font-bold ${
+                            zoneComp.deltaDensity > 0 ? 'text-amber-400' : zoneComp.deltaDensity < 0 ? 'text-emerald-400' : 'text-slate-400'
+                          }`}
+                        >
+                          {zoneComp.deltaDensity > 0 ? '+' : ''}{zoneComp.deltaDensity.toFixed(2)}
+                        </span>
+                      </div>
+                    </div>
+
+                    <p className="text-[11px] text-slate-300 leading-relaxed bg-navy-950/70 p-2 rounded border border-navy-800/80">
+                      {zoneComp.description}
+                    </p>
+                  </div>
+                );
+              })()}
             </div>
           ) : (
             /* 3. VENUE OVERVIEW & CHINNASWAMY SOURCE ATTRIBUTION */

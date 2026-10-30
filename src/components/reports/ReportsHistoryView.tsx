@@ -113,6 +113,59 @@ export const ReportsHistoryView: React.FC = () => {
     document.body.removeChild(link);
   };
 
+  // CSV Export Handler for Zone-by-Zone Spatial Comparison
+  const handleExportZoneCSV = () => {
+    if (comparisons.length === 0 || !comparisons[0].zoneComparisons) {
+      alert('No counterfactual zone comparison data available. Please run a counterfactual test in Scenario Lab first.');
+      return;
+    }
+
+    const latest = comparisons[0];
+    const headers = [
+      'ZoneId',
+      'ZoneName',
+      'Category',
+      'AreaSqM',
+      'MaxRecommendedDensity',
+      'BaselineDensity',
+      'BaselineRisk',
+      'PlanDensity',
+      'PlanRisk',
+      'DeltaDensity',
+      'DeltaPopulation',
+      'Status',
+      'Description',
+    ];
+
+    const rows = latest.zoneComparisons.map((z) => [
+      z.zoneId,
+      `"${z.zoneName.replace(/"/g, '""')}"`,
+      z.category,
+      z.usableAreaSqM,
+      z.maxRecommendedDensity,
+      z.baselineDensity,
+      z.baselineRisk,
+      z.interventionDensity,
+      z.interventionRisk,
+      z.deltaDensity,
+      z.deltaPopulation,
+      z.status,
+      `"${z.description.replace(/"/g, '""')}"`,
+    ]);
+
+    const csvContent =
+      'data:text/csv;charset=utf-8,' +
+      [headers.join(','), ...rows.map((e) => e.join(','))].join('\n');
+
+    const encodedUri = encodeURI(csvContent);
+    const link = document.createElement('a');
+    link.setAttribute('href', encodedUri);
+    link.setAttribute('download', `crowdwise-zone-deltas-${latest.scenarioId}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
   return (
     <div className="p-4 sm:p-6 space-y-6 max-w-[1400px] mx-auto select-none print:p-0 print:m-0 print:max-w-none">
       {/* Header & Export Actions Bar */}
@@ -141,7 +194,15 @@ export const ReportsHistoryView: React.FC = () => {
             className="px-3 py-2 rounded-xl bg-navy-800 hover:bg-navy-700 border border-navy-600 text-xs font-semibold text-cyan-300 transition flex items-center gap-1.5"
           >
             <Download className="w-4 h-4" />
-            <span>Export CSV</span>
+            <span>Export Time-Series CSV</span>
+          </button>
+
+          <button
+            onClick={handleExportZoneCSV}
+            className="px-3 py-2 rounded-xl bg-navy-800 hover:bg-navy-700 border border-navy-600 text-xs font-semibold text-violet-300 transition flex items-center gap-1.5"
+          >
+            <Download className="w-4 h-4" />
+            <span>Export Zone Deltas CSV</span>
           </button>
 
           <button
@@ -252,6 +313,60 @@ export const ReportsHistoryView: React.FC = () => {
                       {comp.tradeOffAnalysis.downstreamRisk}
                     </p>
                   </div>
+
+                  {/* Plain Language Spatial Summary */}
+                  {comp.spatialSummary && (
+                    <div className="p-2.5 rounded-lg bg-navy-950 print:bg-white border border-navy-800 print:border-slate-300 text-xs space-y-1.5">
+                      <div className="flex justify-between items-center">
+                        <strong className="text-slate-200 print:text-black">Spatial Transferred Risk Finding:</strong>
+                        <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-navy-800 print:bg-slate-200 text-slate-300 print:text-black">
+                          Verdict: {comp.spatialSummary.spatialVerdict}
+                        </span>
+                      </div>
+                      <p className="text-slate-300 print:text-slate-800 leading-relaxed text-[11px]">
+                        {comp.spatialSummary.plainLanguageSummary}
+                      </p>
+                    </div>
+                  )}
+
+                  {/* Printable Zone-by-Zone Breakdown Table */}
+                  {comp.zoneComparisons && comp.zoneComparisons.length > 0 && (
+                    <div className="pt-2">
+                      <span className="font-bold text-[11px] text-slate-300 print:text-black block mb-1.5">
+                        Walkable Zone Density Delta (Baseline vs Plan):
+                      </span>
+                      <div className="overflow-x-auto border border-navy-800 print:border-slate-300 rounded-lg">
+                        <table className="w-full text-left text-[11px] border-collapse">
+                          <thead className="bg-navy-950 print:bg-slate-200 text-slate-400 print:text-slate-800">
+                            <tr>
+                              <th className="py-1.5 px-2">Zone Name</th>
+                              <th className="py-1.5 px-1">Safe Limit</th>
+                              <th className="py-1.5 px-1">Baseline</th>
+                              <th className="py-1.5 px-1">Plan</th>
+                              <th className="py-1.5 px-1">Delta (Δρ)</th>
+                              <th className="py-1.5 px-1">Status</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-navy-800 print:divide-slate-200 text-slate-300 print:text-slate-800">
+                            {comp.zoneComparisons.map((z) => (
+                              <tr key={z.zoneId}>
+                                <td className="py-1.5 px-2 font-medium">{z.zoneName}</td>
+                                <td className="py-1.5 px-1 font-mono">{z.maxRecommendedDensity} p/m²</td>
+                                <td className="py-1.5 px-1 font-mono">{z.baselineDensity.toFixed(1)}</td>
+                                <td className="py-1.5 px-1 font-mono font-bold">{z.interventionDensity.toFixed(1)}</td>
+                                <td className="py-1.5 px-1 font-mono font-bold">
+                                  {z.deltaDensity > 0 ? '+' : ''}{z.deltaDensity.toFixed(2)} p/m²
+                                </td>
+                                <td className="py-1.5 px-1 font-bold text-[10px]">
+                                  {z.status}
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  )}
                 </div>
               ))}
             </div>

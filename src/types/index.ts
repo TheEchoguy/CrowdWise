@@ -308,6 +308,54 @@ export interface SimulationMetricsSummary {
   destinationReachedCount: number;
 }
 
+export type ZoneComparisonStatus =
+  | 'RELIEVED'
+  | 'UNCHANGED'
+  | 'WORSENED'
+  | 'NEW_HOTSPOT';
+
+export interface ZoneComparisonResult {
+  zoneId: string;
+  zoneName: string;
+  category: ZoneCategory;
+  usableAreaSqM: number;
+  maxRecommendedDensity: number;
+  baselineDensity: number;
+  baselinePopulation: number;
+  baselineRisk: ZoneRiskLevel;
+  interventionDensity: number;
+  interventionPopulation: number;
+  interventionRisk: ZoneRiskLevel;
+  deltaDensity: number; // interventionDensity - baselineDensity
+  deltaPopulation: number; // interventionPopulation - baselinePopulation
+  status: ZoneComparisonStatus;
+  description: string;
+}
+
+export interface SpatialInterventionSummary {
+  totalZonesEvaluated: number;
+  relievedZonesCount: number;
+  unchangedZonesCount: number;
+  worsenedZonesCount: number;
+  newHotspotCount: number;
+  worstDensityIncrease: {
+    zoneId: string;
+    zoneName: string;
+    deltaDensity: number;
+    finalDensity: number;
+  } | null;
+  largestRelief: {
+    zoneId: string;
+    zoneName: string;
+    deltaDensity: number;
+    finalDensity: number;
+  } | null;
+  riskTransferred: boolean;
+  originalHotspotRelieved: boolean;
+  plainLanguageSummary: string;
+  spatialVerdict: 'IMPROVED' | 'TRANSFERRED_RISK' | 'CRITICAL_CONCERN' | 'BALANCED';
+}
+
 export interface CounterfactualComparison {
   id: string;
   name: string;
@@ -322,12 +370,15 @@ export interface CounterfactualComparison {
     downstreamRisk: string;
     verdict: 'IMPROVED' | 'TRANSFERRED_RISK' | 'CRITICAL_CONCERN' | 'BALANCED';
   };
+  zoneComparisons: ZoneComparisonResult[];
+  spatialSummary: SpatialInterventionSummary;
 }
 
 export interface RenderLayers {
   venueLayout: boolean;
   animatedCrowd: boolean;
   densityHeatmap: boolean;
+  spatialComparison: boolean;
   flowArrows: boolean;
   queueVisuals: boolean;
   gateStatus: boolean;
@@ -338,4 +389,3 @@ export interface RenderLayers {
 }
 
 export type RenderDetailLevel = 'DETAILED' | 'SIMPLIFIED' | 'DENSITY_ONLY';
-

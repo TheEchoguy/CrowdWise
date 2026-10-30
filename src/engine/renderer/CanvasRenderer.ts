@@ -1,4 +1,4 @@
-import { Venue, CrowdAgent, RenderLayers, RenderDetailLevel, Gate, Zone, Incident } from '../../types';
+import { Venue, CrowdAgent, RenderLayers, RenderDetailLevel, Gate, Zone, Incident, ZoneComparisonResult } from '../../types';
 
 export interface ViewportTransform {
   x: number;
@@ -64,7 +64,8 @@ export class CanvasRenderer {
     detailLevel: RenderDetailLevel,
     selectedGateId?: string | null,
     selectedZoneId?: string | null,
-    incidents: Incident[] = []
+    incidents: Incident[] = [],
+    spatialComparisons?: ZoneComparisonResult[] | null
   ): void {
     const ctx = this.ctx;
     const { width, height } = this.canvas;
@@ -129,10 +130,20 @@ export class CanvasRenderer {
       this.drawIncidents(incidents, ctx);
     }
 
+    // 10b. Spatial Comparison Overlay (Intervention vs Baseline Delta)
+    if (layers.spatialComparison && spatialComparisons && spatialComparisons.length > 0) {
+      this.drawSpatialComparisonOverlay(venue, ctx, spatialComparisons, selectedZoneId);
+    }
+
     ctx.restore();
 
     // 11. Overlay Scale Bar (Screen coordinates)
     this.drawScreenScaleBar(ctx, logicalW, logicalH);
+
+    // 12. Spatial Comparison Legend (Screen coordinates)
+    if (layers.spatialComparison && spatialComparisons && spatialComparisons.length > 0) {
+      this.drawSpatialComparisonLegend(ctx, logicalW, logicalH);
+    }
   }
 
   private drawGrid(venue: Venue, ctx: CanvasRenderingContext2D): void {
@@ -611,5 +622,221 @@ export class CanvasRenderer {
 
     ctx.restore();
   }
-}
+  private drawSpatialComparisonOverlay(
+    venue: Venue,
+    ctx: CanvasRenderingContext2D,
+    spatialComparisons: ZoneComparisonResult[],
+    selectedZoneId?: string | null
+  ): void {
+    ctx.save();
 
+    for (const z of venue.zones) {
+      if (z.polygon.length < 3) continue;
+      const comp = spatialComparisons.find((c) => c.zoneId === z.id);
+      if (!comp) continue;
+
+      ctx.save();
+      ctx.beginPath();
+      ctx.moveTo(z.polygon[0].x, z.polygon[0].y);
+      for (let i = 1; i < z.polygon.length; i++) {
+        ctx.lineTo(z.polygon[i].x, z.polygon[i].y);
+      }
+      ctx.closePath();
+
+      // Bounding box and centroid
+      let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+      let cx = 0, cy = 0;
+      for (const p of z.polygon) {
+        if (p.x < minX) minX = p.x;
+        if (p.x > maxX) maxX = p.x;
+        if (p.y < minY) minY = p.y;
+        if (p.y > maxY) maxY = p.y;
+        cx += p.x;
+        cy += p.y;
+      }
+      cx /= z.polygon.length;
+      cy /= z.polygon.length;
+
+      if (comp.status === 'NEW_HOTSPOT') {
+        // High-visibility red wash
+        ctx.fillStyle = 'rgba(239, 68, 68, 0.40)';
+        ctx.fill();
+
+        // Diagonal striping pattern for non-color differentiation
+        ctx.save();
+        ctx.clip();
+        ctx.strokeStyle = 'rgba(254, 202, 202, 0.7)';
+        ctx.lineWidth = 1.0;
+        const span = maxY - minY;
+        for (let d = minX - span; d <= maxX; d += 4.5) {
+          ctx.beginPath();
+          ctx.moveTo(d, maxY);
+          ctx.lineTo(d + span, minY);
+          ctx.stroke();
+        }
+        ctx.restore();
+
+        ctx.strokeStyle = '#EF4444';
+        ctx.lineWidth = 2.4;
+        ctx.stroke();
+
+        this.drawZoneDiffBadge(ctx, cx, cy, '[!] NEW HOTSPOT', `+${comp.deltaDensity.toFixed(2)} p/m²`, '#EF4444', '#FEE2E2');
+      } else if (comp.status === 'WORSENED') {
+        // Amber wash
+        ctx.fillStyle = 'rgba(245, 158, 11, 0.35)';
+        ctx.fill();
+
+        // Horizontal line pattern for non-color differentiation
+        ctx.save();
+        ctx.clip();
+        ctx.strokeStyle = 'rgba(253, 230, 138, 0.5)';
+        ctx.lineWidth = 0.8;
+        for (let y = minY; y <= maxY; y += 3.5) {
+          ctx.beginPath();
+          ctx.moveTo(minX, y);
+          ctx.lineTo(maxX, y);
+          ctx.stroke();
+        }
+        ctx.restore();
+
+        ctx.strokeStyle = '#F59E0B';
+        ctx.lineWidth = 1.8;
+        ctx.stroke();
+
+        this.drawZoneDiffBadge(ctx, cx, cy, '[▲] Worsened', `+${comp.deltaDensity.toFixed(2)} p/m²`, '#F59E0B', '#FEF3C7');
+      } else if (comp.status === 'RELIEVED') {
+        // Emerald green wash
+        ctx.fillStyle = 'rgba(16, 185, 129, 0.28)';
+        ctx.fill();
+
+        ctx.strokeStyle = '#10B981';
+        ctx.lineWidth = 1.6;
+        ctx.setLineDash([3, 2]);
+        ctx.stroke();
+        ctx.setLineDash([]);
+
+        this.drawZoneDiffBadge(ctx, cx, cy, '[▼] Relieved', `${comp.deltaDensity.toFixed(2)} p/m²`, '#10B981', '#D1FAE5');
+      } else {
+        // UNCHANGED
+        if (comp.interventionRisk === 'CRITICAL') {
+          ctx.fillStyle = 'rgba(239, 68, 68, 0.20)';
+          ctx.fill();
+          ctx.strokeStyle = '#EF4444';
+          ctx.lineWidth = 2.2;
+          ctx.stroke();
+          this.drawZoneDiffBadge(ctx, cx, cy, '[!!] Stays Critical', `${comp.interventionDensity.toFixed(1)} p/m²`, '#EF4444', '#FEE2E2');
+        } else {
+          ctx.fillStyle = 'rgba(148, 163, 184, 0.08)';
+          ctx.fill();
+          ctx.strokeStyle = 'rgba(148, 163, 184, 0.35)';
+          ctx.lineWidth = 0.8;
+          ctx.stroke();
+          this.drawZoneDiffBadge(ctx, cx, cy, '[=] Stable', `${comp.interventionDensity.toFixed(1)} p/m²`, '#64748B', '#E2E8F0');
+        }
+      }
+
+      if (selectedZoneId === z.id) {
+        ctx.strokeStyle = '#22D3EE';
+        ctx.lineWidth = 3.0;
+        ctx.stroke();
+      }
+
+      ctx.restore();
+    }
+
+    ctx.restore();
+  }
+
+  private drawZoneDiffBadge(
+    ctx: CanvasRenderingContext2D,
+    x: number,
+    y: number,
+    tag: string,
+    delta: string,
+    borderColor: string,
+    textColor: string
+  ): void {
+    ctx.save();
+    const padX = 3;
+    const padY = 2;
+    const label = `${tag} (${delta})`;
+    ctx.font = 'bold 3.2px Inter, sans-serif';
+    const textWidth = ctx.measureText(label).width;
+
+    ctx.fillStyle = 'rgba(11, 16, 32, 0.88)';
+    ctx.strokeStyle = borderColor;
+    ctx.lineWidth = 0.8;
+    ctx.beginPath();
+    ctx.roundRect(x - textWidth / 2 - padX, y - 2.5 - padY, textWidth + padX * 2, 5 + padY * 2, 1.5);
+    ctx.fill();
+    ctx.stroke();
+
+    ctx.fillStyle = textColor;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(label, x, y);
+    ctx.restore();
+  }
+
+  private drawSpatialComparisonLegend(ctx: CanvasRenderingContext2D, screenW: number, screenH: number): void {
+    ctx.save();
+    const boxW = 280;
+    const boxH = 145;
+    const x = 16;
+    const y = 60;
+
+    // Background card
+    ctx.fillStyle = 'rgba(15, 23, 42, 0.94)';
+    ctx.strokeStyle = '#334155';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.roundRect(x, y, boxW, boxH, 8);
+    ctx.fill();
+    ctx.stroke();
+
+    // Title
+    ctx.fillStyle = '#F8FAFC';
+    ctx.font = 'bold 12px Inter, sans-serif';
+    ctx.textAlign = 'left';
+    ctx.fillText('SPATIAL COMPARISON OVERLAY', x + 12, y + 20);
+
+    ctx.fillStyle = '#94A3B8';
+    ctx.font = '10px Inter, sans-serif';
+    ctx.fillText('Baseline vs Intervention Plan (Multi-symbolic encoding)', x + 12, y + 34);
+
+    const items = [
+      { sym: '[!] ///', label: 'New Hotspot (exceeded safety limit)', color: '#EF4444' },
+      { sym: '[▲] ---', label: 'Worsened Congestion (+Δ density)', color: '#F59E0B' },
+      { sym: '[▼] - -', label: 'Congestion Relieved (-Δ density)', color: '#10B981' },
+      { sym: '[!!] ==', label: 'Persistent Critical Bottleneck', color: '#DC2626' },
+      { sym: '[=] ··', label: 'Stable / Unchanged within limits', color: '#64748B' },
+    ];
+
+    let itemY = y + 52;
+    for (const item of items) {
+      // Symbol pill
+      ctx.fillStyle = 'rgba(30, 41, 59, 0.8)';
+      ctx.strokeStyle = item.color;
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.roundRect(x + 12, itemY - 9, 44, 15, 3);
+      ctx.fill();
+      ctx.stroke();
+
+      ctx.fillStyle = item.color;
+      ctx.font = 'bold 9px monospace';
+      ctx.textAlign = 'center';
+      ctx.fillText(item.sym, x + 34, itemY + 2);
+
+      // Label
+      ctx.fillStyle = '#E2E8F0';
+      ctx.font = '11px Inter, sans-serif';
+      ctx.textAlign = 'left';
+      ctx.fillText(item.label, x + 64, itemY + 2);
+
+      itemY += 17;
+    }
+
+    ctx.restore();
+  }
+}

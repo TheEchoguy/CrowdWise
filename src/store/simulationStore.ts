@@ -15,6 +15,7 @@ import {
   Zone,
 } from '../types';
 import { SimulationEngine } from '../engine/SimulationEngine';
+import { SpatialAnalyzer } from '../engine/SpatialAnalyzer';
 import { CHINNASWAMY_STADIUM_PROFILE } from '../data/chinnaswamyStadium';
 import { OPEN_FESTIVAL_PROFILE } from '../data/openFestival';
 import { STREET_GATHERING_PROFILE } from '../data/streetGathering';
@@ -100,6 +101,8 @@ interface SimulationStoreState {
 
   // Counterfactual Lab
   comparisons: CounterfactualComparison[];
+  activeComparisonId: string | null;
+  setActiveComparisonId: (id: string | null) => void;
   runCounterfactualComparison: (scenarioId: string, interventionIds: string[]) => void;
 
   // Periodic UI Syncer
@@ -192,6 +195,7 @@ export const useSimulationStore = create<SimulationStoreState>((set, get) => ({
     venueLayout: true,
     animatedCrowd: true,
     densityHeatmap: true,
+    spatialComparison: false,
     flowArrows: false,
     queueVisuals: true,
     gateStatus: true,
@@ -313,6 +317,8 @@ export const useSimulationStore = create<SimulationStoreState>((set, get) => ({
   },
 
   comparisons: [],
+  activeComparisonId: null,
+  setActiveComparisonId: (id) => set({ activeComparisonId: id }),
   runCounterfactualComparison: (scenarioId, interventionIds) => {
     const { currentVenue, randomSeed, inflowConfig, interventions } = get();
 
@@ -345,36 +351,61 @@ export const useSimulationStore = create<SimulationStoreState>((set, get) => ({
     }
     const planMetrics = planEngine.getSummary();
 
+    // 3. Zone-by-Zone Spatial Analysis & Transferred Risk Detection
+    const scDef = SCENARIOS.find((s) => s.id === scenarioId);
+    const appliedNames = planInterventions.filter((i) => i.isActive).map((i) => i.name);
+    const { zoneComparisons, spatialSummary } = SpatialAnalyzer.analyze(
+      currentVenue,
+      baseEngine,
+      planEngine,
+      scDef?.name || 'Scenario',
+      appliedNames
+    );
+
     // Determine Trade-off analysis
     const queueDiff = baselineMetrics.peakQueueLength - planMetrics.peakQueueLength;
-    const densityDiff = baselineMetrics.maxZoneDensity - planMetrics.maxZoneDensity;
-
-    let verdict: CounterfactualComparison['tradeOffAnalysis']['verdict'] = 'IMPROVED';
-    let benefit = `Reduced peak perimeter queue by ${Math.max(0, queueDiff)} attendees.`;
-    let downstreamRisk = 'Requires steward monitoring at perimeter approach junctions.';
-
-    if (planMetrics.externalHoldingOccupancy > 1500) {
-      verdict = 'TRANSFERRED_RISK';
-      downstreamRisk = 'External holding zone occupancy increased by ' + planMetrics.externalHoldingOccupancy + ' attendees.';
+    let verdict = spatialSummary.spatialVerdict;
+    let benefit = queueDiff > 0
+      ? `Reduced peak perimeter queue by ${queueDiff} attendees.`
+      : 'Maintained queue throughput within design parameters.';
+    if (spatialSummary.largestRelief) {
+      benefit += ` Max density reduction in ${spatialSummary.largestRelief.zoneName} (${spatialSummary.largestRelief.deltaDensity.toFixed(2)} p/m²).`;
     }
 
+    let downstreamRisk = 'No significant transferred bottlenecks detected.';
+    if (spatialSummary.riskTransferred) {
+      if (spatialSummary.worstDensityIncrease) {
+        downstreamRisk = `Crowd diverted into ${spatialSummary.worstDensityIncrease.zoneName} (+ ${spatialSummary.worstDensityIncrease.deltaDensity.toFixed(2)} p/m², final ${spatialSummary.worstDensityIncrease.finalDensity.toFixed(1)} p/m²). Requires secondary stewards.`;
+      } else {
+        downstreamRisk = 'Downstream concourse sectors experienced secondary crowd accumulation.';
+      }
+    } else if (planMetrics.externalHoldingOccupancy > 1000) {
+      downstreamRisk = `Auxiliary holding zone occupancy rose to ${planMetrics.externalHoldingOccupancy} attendees.`;
+    }
+
+    const compId = `comp-${Date.now()}`;
     const comp: CounterfactualComparison = {
-      id: `comp-${Date.now()}`,
-      name: `Counterfactual: ${SCENARIOS.find((s) => s.id === scenarioId)?.name || 'Scenario'}`,
+      id: compId,
+      name: `Counterfactual: ${scDef?.name || 'Scenario'}`,
       scenarioId,
       seed: randomSeed,
       timestamp: new Date().toLocaleTimeString(),
       baseline: baselineMetrics,
       interventionPlan: planMetrics,
-      interventionsApplied: planInterventions.filter((i) => i.isActive).map((i) => i.name),
+      interventionsApplied: appliedNames,
       tradeOffAnalysis: {
         benefit,
         downstreamRisk,
         verdict,
       },
+      zoneComparisons,
+      spatialSummary,
     };
 
-    set((state) => ({ comparisons: [comp, ...state.comparisons] }));
+    set((state) => ({
+      comparisons: [comp, ...state.comparisons],
+      activeComparisonId: compId,
+    }));
   },
 
   syncFromEngine: () => {
