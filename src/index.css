@@ -44,3 +44,80 @@
   animation: pulseGlow 1s infinite ease-in-out;
 }
 
+/* =========================================================================
+   Print Styles for Clean A4 Event Safety Decision Brief & Permit PDF
+   ========================================================================= */
+@media print {
+  @page {
+    size: A4 portrait;
+    margin: 12mm 14mm 12mm 14mm;
+  }
+
+  body {
+    background: #ffffff !important;
+    background-color: #ffffff !important;
+    color: #0f172a !important;
+    overflow: visible !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  /* Hide background interactive application UI */
+  header,
+  main,
+  .no-print {
+    display: none !important;
+  }
+
+  /* Elevate decision brief modal container to native document flow */
+  .decision-modal-backdrop {
+    position: static !important;
+    background: #ffffff !important;
+    padding: 0 !important;
+    display: block !important;
+    inset: auto !important;
+  }
+
+  .decision-modal-container {
+    position: static !important;
+    max-width: 100% !important;
+    max-height: none !important;
+    border: none !important;
+    box-shadow: none !important;
+    background: #ffffff !important;
+    color: #0f172a !important;
+    padding: 0 !important;
+    overflow: visible !important;
+  }
+
+  .decision-modal-body {
+    overflow: visible !important;
+    max-height: none !important;
+    padding: 0 !important;
+    color: #0f172a !important;
+  }
+
+  /* Printable cards, borders, and text overrides */
+  .print-card {
+    background-color: #f8fafc !important;
+    border: 1px solid #cbd5e1 !important;
+    color: #0f172a !important;
+  }
+
+  .print-text-dark {
+    color: #0f172a !important;
+  }
+
+  .print-text-muted {
+    color: #64748b !important;
+  }
+
+  .print-border {
+    border-color: #cbd5e1 !important;
+  }
+
+  .print-avoid-break {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+}
