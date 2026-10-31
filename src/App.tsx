@@ -7,6 +7,7 @@ import { DecisionModal } from './components/layout/DecisionModal';
 import { BenchmarkModal } from './components/layout/BenchmarkModal';
 import { useSimulationStore } from './state/useSimulationStore';
 import { KSCA_STADIUM_SECTORS } from './engine/ChinnaswamyData';
+import { StadiumBlueprint } from './stadium/components/StadiumBlueprint';
 
 interface ErrorBoundaryProps {
   children: ReactNode;
@@ -56,6 +57,8 @@ class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
 }
 
 export const App: React.FC = () => {
+  const appMode = useSimulationStore((s) => s.appMode);
+  const setAppMode = useSimulationStore((s) => s.setAppMode);
   const currentView = useSimulationStore((s) => s.currentView);
   const selectedSector = (useSimulationStore((s) => s.selectedRoadSector) ||
     useSimulationStore((s) => s.selectedSector) ||
@@ -65,6 +68,17 @@ export const App: React.FC = () => {
 
   const activeSectorData = KSCA_STADIUM_SECTORS[selectedSector] || KSCA_STADIUM_SECTORS.LINK_ROAD;
 
+  // Render Phase 1 Dedicated Authentic Stadium Blueprint
+  if (appMode === 'BLUEPRINT') {
+    return (
+      <ErrorBoundary fallbackTitle="Stadium Blueprint Error">
+        <StadiumBlueprint onSwitchToSimulation={() => setAppMode('SIMULATION')} />
+        <DecisionModal />
+        <BenchmarkModal isOpen={isBenchmarkOpen} onClose={toggleBenchmark} />
+      </ErrorBoundary>
+    );
+  }
+
   const currentTitle =
     currentView === 'MACRO_STADIUM'
       ? 'M. Chinnaswamy Stadium — 35,000 Capacity Satellite Digital Twin'
@@ -73,7 +87,7 @@ export const App: React.FC = () => {
   const currentSubtitle =
     currentView === 'MACRO_STADIUM'
       ? '23 Perimeter Gates, Central Cricket Pitch, 4 Arterial Roads & Grandstand Seating Blocks'
-      : `${activeSectorData.roadLabel} ── Outer Frisking (E) & Inner Turnstile Banks (G)`;
+      : `${activeSectorData.roadLabel} ──► Outer Frisking (E) & Inner Turnstile Banks (G)`;
 
   return (
     <div className="flex flex-col h-screen w-screen bg-[#080c14] text-slate-100 overflow-hidden font-sans select-none">

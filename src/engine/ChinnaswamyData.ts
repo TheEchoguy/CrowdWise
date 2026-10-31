@@ -99,6 +99,13 @@ export interface OuterGate {
   road: 'CUBBON_ROAD' | 'LINK_ROAD' | 'MG_ROAD' | 'QUEENS_ROAD';
   x: number;
   y: number;
+  approachVector: { dx: number; dy: number };
+  active: boolean;
+  inflowShare: number;
+  bufferCapacity: number;
+  queueCount: number;
+  admittedTotal: number;
+  status: 'OPEN' | 'CONGESTED' | 'CLOSED';
   allowedSpectators: boolean; // false for Queens Road (Media/Staff only)
   capacityPerMin: number;
   connectedInnerGates: string[];
@@ -106,7 +113,8 @@ export interface OuterGate {
 
 export interface InnerGate {
   id: string; // 'G1' to 'G14'
-  standName: string; // 'A Stand', 'B Stand', 'C Stand', 'E Stand', 'H Upper', 'P Terrace'
+  standName: string; // 'A Stand', 'B Stand', 'C Stand', 'E Stand', 'H Upper', 'P Terrace', etc.
+  sector: 'CUBBON_ROAD' | 'LINK_ROAD' | 'MG_ROAD' | 'QUEENS_ROAD';
   x: number;
   y: number;
   turnstileCount: number;
@@ -121,52 +129,96 @@ export const KSCA_ROADS = {
 };
 
 export const KSCA_INNER_GATES: Record<string, InnerGate> = {
-  G1: { id: 'G1', standName: 'P Terrace', x: 340, y: 360, turnstileCount: 4, capacityPerMin: 180 },
-  G4: { id: 'G4', standName: 'Pavilion Terrace', x: 295, y: 285, turnstileCount: 3, capacityPerMin: 120 },
-  G5: { id: 'G5', standName: 'VIP Club House', x: 310, y: 220, turnstileCount: 2, capacityPerMin: 90 },
-  G6: { id: 'G6', standName: 'A Stand', x: 345, y: 165, turnstileCount: 4, capacityPerMin: 180 },
-  G7: { id: 'G7', standName: 'B Stand', x: 405, y: 130, turnstileCount: 5, capacityPerMin: 220 },
-  G8: { id: 'G8', standName: 'C Stand', x: 480, y: 115, turnstileCount: 6, capacityPerMin: 260 },
-  G9: { id: 'G9', standName: 'D Stand', x: 555, y: 125, turnstileCount: 5, capacityPerMin: 220 },
-  G10: { id: 'G10', standName: 'E Stand Upper', x: 620, y: 155, turnstileCount: 5, capacityPerMin: 220 },
-  G11: { id: 'G11', standName: 'E Stand Lower', x: 655, y: 195, turnstileCount: 4, capacityPerMin: 180 },
-  G12: { id: 'G12', standName: 'G Stand', x: 668, y: 245, turnstileCount: 4, capacityPerMin: 180 },
-  G13: { id: 'G13', standName: 'H Upper', x: 650, y: 320, turnstileCount: 6, capacityPerMin: 260 },
-  G14: { id: 'G14', standName: 'East Grandstand', x: 610, y: 385, turnstileCount: 8, capacityPerMin: 340 }
+  G1: { id: 'G1', standName: 'P-Loft / P-Terrace', sector: 'MG_ROAD', x: 340, y: 360, turnstileCount: 4, capacityPerMin: 180 },
+  G2: { id: 'G2', standName: 'P3 Stand', sector: 'MG_ROAD', x: 420, y: 375, turnstileCount: 4, capacityPerMin: 180 },
+  G3: { id: 'G3', standName: 'Club Annex', sector: 'MG_ROAD', x: 500, y: 390, turnstileCount: 2, capacityPerMin: 90 },
+  G4: { id: 'G4', standName: 'Pavilion Terrace (A Stand)', sector: 'QUEENS_ROAD', x: 295, y: 285, turnstileCount: 3, capacityPerMin: 120 },
+  G5: { id: 'G5', standName: 'VIP Club House (B Stand)', sector: 'QUEENS_ROAD', x: 310, y: 220, turnstileCount: 2, capacityPerMin: 90 },
+  G6: { id: 'G6', standName: 'Media Center', sector: 'QUEENS_ROAD', x: 345, y: 165, turnstileCount: 4, capacityPerMin: 180 },
+  G7: { id: 'G7', standName: 'C Stand', sector: 'CUBBON_ROAD', x: 405, y: 130, turnstileCount: 5, capacityPerMin: 220 },
+  G8: { id: 'G8', standName: 'D Stand', sector: 'CUBBON_ROAD', x: 480, y: 115, turnstileCount: 6, capacityPerMin: 260 },
+  G9: { id: 'G9', standName: 'B-Ground Annex', sector: 'CUBBON_ROAD', x: 555, y: 125, turnstileCount: 5, capacityPerMin: 220 },
+  G10: { id: 'G10', standName: 'Grand Terrace (E Stand Upper)', sector: 'LINK_ROAD', x: 620, y: 155, turnstileCount: 5, capacityPerMin: 220 },
+  G11: { id: 'G11', standName: 'E Stand Main', sector: 'LINK_ROAD', x: 655, y: 195, turnstileCount: 4, capacityPerMin: 180 },
+  G12: { id: 'G12', standName: 'H Upper Tier', sector: 'LINK_ROAD', x: 668, y: 245, turnstileCount: 4, capacityPerMin: 180 },
+  G13: { id: 'G13', standName: 'Floor & P2', sector: 'LINK_ROAD', x: 650, y: 320, turnstileCount: 6, capacityPerMin: 260 },
+  G14: { id: 'G14', standName: 'Pavilion East (East Grandstand)', sector: 'LINK_ROAD', x: 610, y: 385, turnstileCount: 8, capacityPerMin: 340 }
 };
 
 export const KSCA_OUTER_GATES: Record<string, OuterGate> = {
-  // Cubbon Road (North Perimeter)
-  E18: { id: 'E18', road: 'CUBBON_ROAD', x: 320, y: 70, allowedSpectators: true, capacityPerMin: 160, connectedInnerGates: ['G6'] },
-  E19: { id: 'E19', road: 'CUBBON_ROAD', x: 360, y: 70, allowedSpectators: true, capacityPerMin: 180, connectedInnerGates: ['G6', 'G7'] },
-  E20: { id: 'E20', road: 'CUBBON_ROAD', x: 400, y: 70, allowedSpectators: true, capacityPerMin: 200, connectedInnerGates: ['G7'] },
-  E21: { id: 'E21', road: 'CUBBON_ROAD', x: 440, y: 70, allowedSpectators: true, capacityPerMin: 220, connectedInnerGates: ['G7', 'G8'] },
-  E22: { id: 'E22', road: 'CUBBON_ROAD', x: 480, y: 70, allowedSpectators: true, capacityPerMin: 240, connectedInnerGates: ['G8'] },
-  E23: { id: 'E23', road: 'CUBBON_ROAD', x: 520, y: 70, allowedSpectators: true, capacityPerMin: 220, connectedInnerGates: ['G8', 'G9'] },
-  E1: { id: 'E1', road: 'CUBBON_ROAD', x: 560, y: 70, allowedSpectators: true, capacityPerMin: 220, connectedInnerGates: ['G9'] },
-  E2: { id: 'E2', road: 'CUBBON_ROAD', x: 605, y: 75, allowedSpectators: true, capacityPerMin: 200, connectedInnerGates: ['G9', 'G10'] },
-  E3: { id: 'E3', road: 'CUBBON_ROAD', x: 645, y: 75, allowedSpectators: true, capacityPerMin: 180, connectedInnerGates: ['G10', 'G11'] },
-  E4: { id: 'E4', road: 'CUBBON_ROAD', x: 685, y: 80, allowedSpectators: true, capacityPerMin: 160, connectedInnerGates: ['G11'] },
+  // Cubbon Road (North Perimeter) - Approaching southwards (dx: 0, dy: 1)
+  E18: { id: 'E18', road: 'CUBBON_ROAD', x: 320, y: 70, approachVector: { dx: 0, dy: 1 }, active: true, inflowShare: 0.1, bufferCapacity: 60, queueCount: 0, admittedTotal: 0, status: 'OPEN', allowedSpectators: true, capacityPerMin: 160, connectedInnerGates: ['G6'] },
+  E19: { id: 'E19', road: 'CUBBON_ROAD', x: 360, y: 70, approachVector: { dx: 0, dy: 1 }, active: true, inflowShare: 0.1, bufferCapacity: 60, queueCount: 0, admittedTotal: 0, status: 'OPEN', allowedSpectators: true, capacityPerMin: 180, connectedInnerGates: ['G6', 'G7'] },
+  E20: { id: 'E20', road: 'CUBBON_ROAD', x: 400, y: 70, approachVector: { dx: 0, dy: 1 }, active: true, inflowShare: 0.1, bufferCapacity: 60, queueCount: 0, admittedTotal: 0, status: 'OPEN', allowedSpectators: true, capacityPerMin: 200, connectedInnerGates: ['G7'] },
+  E21: { id: 'E21', road: 'CUBBON_ROAD', x: 440, y: 70, approachVector: { dx: 0, dy: 1 }, active: true, inflowShare: 0.12, bufferCapacity: 80, queueCount: 0, admittedTotal: 0, status: 'OPEN', allowedSpectators: true, capacityPerMin: 220, connectedInnerGates: ['G7', 'G8'] },
+  E22: { id: 'E22', road: 'CUBBON_ROAD', x: 480, y: 70, approachVector: { dx: 0, dy: 1 }, active: true, inflowShare: 0.12, bufferCapacity: 80, queueCount: 0, admittedTotal: 0, status: 'OPEN', allowedSpectators: true, capacityPerMin: 240, connectedInnerGates: ['G8'] },
+  E23: { id: 'E23', road: 'CUBBON_ROAD', x: 520, y: 70, approachVector: { dx: 0, dy: 1 }, active: true, inflowShare: 0.12, bufferCapacity: 80, queueCount: 0, admittedTotal: 0, status: 'OPEN', allowedSpectators: true, capacityPerMin: 220, connectedInnerGates: ['G8', 'G9'] },
+  E1: { id: 'E1', road: 'CUBBON_ROAD', x: 560, y: 70, approachVector: { dx: 0, dy: 1 }, active: true, inflowShare: 0.1, bufferCapacity: 60, queueCount: 0, admittedTotal: 0, status: 'OPEN', allowedSpectators: true, capacityPerMin: 220, connectedInnerGates: ['G9'] },
+  E2: { id: 'E2', road: 'CUBBON_ROAD', x: 605, y: 75, approachVector: { dx: -0.2, dy: 0.98 }, active: true, inflowShare: 0.09, bufferCapacity: 60, queueCount: 0, admittedTotal: 0, status: 'OPEN', allowedSpectators: true, capacityPerMin: 200, connectedInnerGates: ['G9', 'G10'] },
+  E3: { id: 'E3', road: 'CUBBON_ROAD', x: 645, y: 75, approachVector: { dx: -0.3, dy: 0.95 }, active: true, inflowShare: 0.08, bufferCapacity: 60, queueCount: 0, admittedTotal: 0, status: 'OPEN', allowedSpectators: true, capacityPerMin: 180, connectedInnerGates: ['G10', 'G11'] },
+  E4: { id: 'E4', road: 'CUBBON_ROAD', x: 685, y: 80, approachVector: { dx: -0.4, dy: 0.91 }, active: true, inflowShare: 0.07, bufferCapacity: 60, queueCount: 0, admittedTotal: 0, status: 'OPEN', allowedSpectators: true, capacityPerMin: 160, connectedInnerGates: ['G11'] },
 
-  // Link Road / St. Marks (East Perimeter)
-  E12: { id: 'E12', road: 'LINK_ROAD', x: 740, y: 140, allowedSpectators: true, capacityPerMin: 160, connectedInnerGates: ['G10', 'G11'] },
-  E13: { id: 'E13', road: 'LINK_ROAD', x: 740, y: 195, allowedSpectators: true, capacityPerMin: 180, connectedInnerGates: ['G11', 'G12'] },
-  E14: { id: 'E14', road: 'LINK_ROAD', x: 740, y: 250, allowedSpectators: true, capacityPerMin: 200, connectedInnerGates: ['G12'] },
-  E15: { id: 'E15', road: 'LINK_ROAD', x: 740, y: 310, allowedSpectators: true, capacityPerMin: 220, connectedInnerGates: ['G12', 'G13'] },
-  E16: { id: 'E16', road: 'LINK_ROAD', x: 740, y: 365, allowedSpectators: true, capacityPerMin: 220, connectedInnerGates: ['G13', 'G14'] },
-  E17: { id: 'E17', road: 'LINK_ROAD', x: 740, y: 420, allowedSpectators: true, capacityPerMin: 180, connectedInnerGates: ['G14'] },
+  // Link Road / St. Marks (East Perimeter) - Approaching westwards (dx: -1, dy: 0)
+  E12: { id: 'E12', road: 'LINK_ROAD', x: 740, y: 140, approachVector: { dx: -1, dy: 0 }, active: true, inflowShare: 0.14, bufferCapacity: 80, queueCount: 0, admittedTotal: 0, status: 'OPEN', allowedSpectators: true, capacityPerMin: 160, connectedInnerGates: ['G10', 'G11'] },
+  E13: { id: 'E13', road: 'LINK_ROAD', x: 740, y: 195, approachVector: { dx: -1, dy: 0 }, active: true, inflowShare: 0.16, bufferCapacity: 80, queueCount: 0, admittedTotal: 0, status: 'OPEN', allowedSpectators: true, capacityPerMin: 180, connectedInnerGates: ['G11', 'G12'] },
+  E14: { id: 'E14', road: 'LINK_ROAD', x: 740, y: 250, approachVector: { dx: -1, dy: 0 }, active: true, inflowShare: 0.18, bufferCapacity: 90, queueCount: 0, admittedTotal: 0, status: 'OPEN', allowedSpectators: true, capacityPerMin: 200, connectedInnerGates: ['G12'] },
+  E15: { id: 'E15', road: 'LINK_ROAD', x: 740, y: 310, approachVector: { dx: -1, dy: 0 }, active: true, inflowShare: 0.2, bufferCapacity: 100, queueCount: 0, admittedTotal: 0, status: 'OPEN', allowedSpectators: true, capacityPerMin: 220, connectedInnerGates: ['G12', 'G13'] },
+  E16: { id: 'E16', road: 'LINK_ROAD', x: 740, y: 365, approachVector: { dx: -1, dy: 0 }, active: true, inflowShare: 0.18, bufferCapacity: 90, queueCount: 0, admittedTotal: 0, status: 'OPEN', allowedSpectators: true, capacityPerMin: 220, connectedInnerGates: ['G13', 'G14'] },
+  E17: { id: 'E17', road: 'LINK_ROAD', x: 740, y: 420, approachVector: { dx: -1, dy: 0 }, active: true, inflowShare: 0.14, bufferCapacity: 80, queueCount: 0, admittedTotal: 0, status: 'OPEN', allowedSpectators: true, capacityPerMin: 180, connectedInnerGates: ['G14'] },
 
-  // MG Road Plaza (South Perimeter - Mass Transit Feeder)
-  E11: { id: 'E11', road: 'MG_ROAD', x: 670, y: 485, allowedSpectators: true, capacityPerMin: 600, connectedInnerGates: ['G13', 'G14', 'G1'] },
+  // MG Road Plaza (South Perimeter - Mass Transit Feeder) - Approaching northwest (dx: -0.6, dy: -0.8)
+  E11: { id: 'E11', road: 'MG_ROAD', x: 670, y: 485, approachVector: { dx: -0.6, dy: -0.8 }, active: true, inflowShare: 1.0, bufferCapacity: 250, queueCount: 0, admittedTotal: 0, status: 'OPEN', allowedSpectators: true, capacityPerMin: 600, connectedInnerGates: ['G13', 'G14', 'G1'] },
 
-  // Queens Road (West Perimeter - VIP / Media / Staff only)
-  E5: { id: 'E5', road: 'QUEENS_ROAD', x: 215, y: 205, allowedSpectators: false, capacityPerMin: 60, connectedInnerGates: ['G5', 'G6'] },
-  E6: { id: 'E6', road: 'QUEENS_ROAD', x: 250, y: 255, allowedSpectators: false, capacityPerMin: 60, connectedInnerGates: ['G4', 'G5'] },
-  E7: { id: 'E7', road: 'QUEENS_ROAD', x: 280, y: 305, allowedSpectators: false, capacityPerMin: 60, connectedInnerGates: ['G4'] },
-  E8: { id: 'E8', road: 'QUEENS_ROAD', x: 315, y: 360, allowedSpectators: false, capacityPerMin: 60, connectedInnerGates: ['G1', 'G4'] },
-  E9: { id: 'E9', road: 'QUEENS_ROAD', x: 350, y: 410, allowedSpectators: false, capacityPerMin: 60, connectedInnerGates: ['G1'] },
-  E10: { id: 'E10', road: 'QUEENS_ROAD', x: 390, y: 455, allowedSpectators: false, capacityPerMin: 60, connectedInnerGates: ['G1'] }
+  // Queens Road (West Perimeter - VIP / Media / Staff only) - Approaching east (dx: 0.9, dy: 0.4)
+  E5: { id: 'E5', road: 'QUEENS_ROAD', x: 215, y: 205, approachVector: { dx: 0.9, dy: 0.4 }, active: true, inflowShare: 0.15, bufferCapacity: 40, queueCount: 0, admittedTotal: 0, status: 'OPEN', allowedSpectators: false, capacityPerMin: 60, connectedInnerGates: ['G5', 'G6'] },
+  E6: { id: 'E6', road: 'QUEENS_ROAD', x: 250, y: 255, approachVector: { dx: 0.9, dy: 0.4 }, active: true, inflowShare: 0.15, bufferCapacity: 40, queueCount: 0, admittedTotal: 0, status: 'OPEN', allowedSpectators: false, capacityPerMin: 60, connectedInnerGates: ['G4', 'G5'] },
+  E7: { id: 'E7', road: 'QUEENS_ROAD', x: 280, y: 305, approachVector: { dx: 0.9, dy: 0.4 }, active: true, inflowShare: 0.2, bufferCapacity: 40, queueCount: 0, admittedTotal: 0, status: 'OPEN', allowedSpectators: false, capacityPerMin: 60, connectedInnerGates: ['G4'] },
+  E8: { id: 'E8', road: 'QUEENS_ROAD', x: 315, y: 360, approachVector: { dx: 0.9, dy: 0.4 }, active: true, inflowShare: 0.15, bufferCapacity: 40, queueCount: 0, admittedTotal: 0, status: 'OPEN', allowedSpectators: false, capacityPerMin: 60, connectedInnerGates: ['G1', 'G4'] },
+  E9: { id: 'E9', road: 'QUEENS_ROAD', x: 350, y: 410, approachVector: { dx: 0.9, dy: 0.4 }, active: true, inflowShare: 0.15, bufferCapacity: 40, queueCount: 0, admittedTotal: 0, status: 'OPEN', allowedSpectators: false, capacityPerMin: 60, connectedInnerGates: ['G1'] },
+  E10: { id: 'E10', road: 'QUEENS_ROAD', x: 390, y: 455, approachVector: { dx: 0.9, dy: 0.4 }, active: true, inflowShare: 0.2, bufferCapacity: 40, queueCount: 0, admittedTotal: 0, status: 'OPEN', allowedSpectators: false, capacityPerMin: 60, connectedInnerGates: ['G1'] }
 };
+
+/**
+ * Calculates theoretical admission throughput for a turnstile bank
+ * enforcing sequential NFC Tap and Security Screening stages:
+ * C_NFC = activeNfcLanes * 60 / nfcServiceSec
+ * C_SECURITY = activeSecurityBooths * 60 / screeningServiceSec
+ * C_EFFECTIVE = min(C_NFC, C_SECURITY)
+ */
+export function calculateTheoreticalThroughput(
+  activeNfcLanes: number,
+  nfcLatencySec: number,
+  activeSecurityBooths: number,
+  screeningLatencySec: number
+): {
+  perNfcLaneCap: number;
+  totalNfcCap: number;
+  perSecurityBoothCap: number;
+  totalSecurityCap: number;
+  effectiveCapacityPerMin: number;
+  bottleneckStage: 'NFC_TAP' | 'SECURITY_SCREENING';
+} {
+  const safeNfcTime = Math.max(0.1, nfcLatencySec);
+  const safeScreenTime = Math.max(0.5, screeningLatencySec);
+
+  const perNfcLaneCap = 60 / safeNfcTime;
+  const totalNfcCap = activeNfcLanes * perNfcLaneCap;
+
+  const perSecurityBoothCap = 60 / safeScreenTime;
+  const totalSecurityCap = activeSecurityBooths * perSecurityBoothCap;
+
+  const effectiveCapacityPerMin = Math.min(totalNfcCap, totalSecurityCap);
+  const bottleneckStage = totalNfcCap < totalSecurityCap ? 'NFC_TAP' : 'SECURITY_SCREENING';
+
+  return {
+    perNfcLaneCap,
+    totalNfcCap,
+    perSecurityBoothCap,
+    totalSecurityCap,
+    effectiveCapacityPerMin,
+    bottleneckStage
+  };
+}
 
 export interface SectorDefinition {
   id: StadiumSectorId;

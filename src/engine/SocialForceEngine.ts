@@ -79,21 +79,35 @@ export function updateAgentPhysics(
     targetX = agent.concourseDispersalTarget?.x ?? agent.x;
     targetY = agent.concourseDispersalTarget?.y ?? -20;
     tau = 0.3;
-  } else if (agent.waypoints && agent.waypoints.length > 0 && agent.currentWaypointIndex < agent.waypoints.length) {
-    const wp = agent.waypoints[agent.currentWaypointIndex];
-    targetX = wp.x;
-    targetY = wp.y;
-    tau = 0.35;
+  } else if (agent.waypoints && agent.waypoints.length > 0) {
+    if (agent.currentWaypointIndex < agent.waypoints.length) {
+      const wp = agent.waypoints[agent.currentWaypointIndex];
+      targetX = wp.x;
+      targetY = wp.y;
+      agent.targetX = wp.x;
+      agent.targetY = wp.y;
+      tau = 0.35;
 
-    // Active Waypoint Traversal: 18px waypoint radius with progression
-    const distToWp = Math.hypot(agent.x - wp.x, agent.y - wp.y);
-    if (distToWp < 20.0) {
-      agent.currentWaypointIndex++;
-      if (agent.currentWaypointIndex < agent.waypoints.length) {
-        const nextWp = agent.waypoints[agent.currentWaypointIndex];
-        targetX = nextWp.x;
-        targetY = nextWp.y;
+      // Active Waypoint Traversal: 22px waypoint radius with progression
+      const distToWp = Math.hypot(agent.x - wp.x, agent.y - wp.y);
+      if (distToWp < 22.0) {
+        agent.currentWaypointIndex++;
+        if (agent.currentWaypointIndex < agent.waypoints.length) {
+          const nextWp = agent.waypoints[agent.currentWaypointIndex];
+          targetX = nextWp.x;
+          targetY = nextWp.y;
+          agent.targetX = nextWp.x;
+          agent.targetY = nextWp.y;
+        }
       }
+    } else {
+      // Reached final destination (inner turnstiles or grandstand): persist final waypoint forward
+      const lastWp = agent.waypoints[agent.waypoints.length - 1];
+      targetX = lastWp.x;
+      targetY = lastWp.y;
+      agent.targetX = lastWp.x;
+      agent.targetY = lastWp.y;
+      tau = 0.35;
     }
   }
 

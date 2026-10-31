@@ -6,10 +6,21 @@ import {
   StadiumSectorId,
   RoadSectorId,
   AppViewMode,
+  SimulationDisplayMode,
   ActiveGateSector,
   MatchPhase
 } from '../types/simulation';
 import { calculateTimeToFillHours, calculateCrushProbabilityIndex } from '../engine/ChinnaswamyData';
+import { ExperimentType, ScenarioConfig, PRESET_SCENARIOS } from '../engine/SyntheticDemandGenerator';
+import { VerdictReport } from '../engine/SafetyVerdictEngine';
+import { ComparativeAuditReport } from '../engine/DisplacementDetector';
+import { CrowdInteractionAnalysis } from '../engine/CrowdInteractionAnalyzer';
+import { ControllerDecisions, InterventionType } from '../engine/SafetyController';
+import {
+  HeatmapVisualizationMode,
+  MicroGateMetrics,
+  GateLogEvent
+} from '../stadium/types/gateSimulation';
 
 export interface SimulationStoreState {
   // Scenario & Simulation Parameters
@@ -25,9 +36,22 @@ export interface SimulationStoreState {
   resetSignal: number;        // incremented to trigger reset
   isModalOpen: boolean;       // default false
   isBenchmarkOpen: boolean;   // default false
+  appMode: 'BLUEPRINT' | 'SIMULATION'; // Phase 1 Blueprint vs Simulation Lab
+
+  // Master Safety Workflow State
+  activeExperiment: ExperimentType;
+  scenarioConfig: ScenarioConfig;
+  currentVerdict: VerdictReport | null;
+  comparativeAudit: ComparativeAuditReport | null;
+  interactionAnalysis: CrowdInteractionAnalysis | null;
+  controllerDecisions: ControllerDecisions | null;
 
   // View Mode: 'MACRO_STADIUM' (360° Satellite CAD) vs 'SECTOR_CONCOURSE' (Micro CAD)
   currentView: AppViewMode;
+  simulationDisplayMode: SimulationDisplayMode;
+  selectedOuterGateId: string | null;
+  selectedInnerGateId: string | null;
+  gateInflowOverrides: Record<string, number>;
   viewMode: 'stadium' | 'gate';
   stadiumViewMode: StadiumViewMode;   // 'MACRO_VIEW' | 'MICRO_VIEW_EAST'
   selectedSector: RoadSectorId | StadiumSectorId;
@@ -68,6 +92,10 @@ export interface SimulationStoreState {
 
   // Actions
   setCurrentView: (view: AppViewMode) => void;
+  setSimulationDisplayMode: (mode: SimulationDisplayMode) => void;
+  setSelectedOuterGateId: (id: string | null) => void;
+  setSelectedInnerGateId: (id: string | null) => void;
+  setGateInflowOverride: (gateId: string, rate: number) => void;
   setScenario: (scenario: ScenarioType) => void;
   setViewMode: (mode: 'stadium' | 'gate') => void;
   setStadiumViewMode: (mode: StadiumViewMode) => void;
@@ -77,6 +105,7 @@ export interface SimulationStoreState {
   toggleCounterFlow: () => void;
   setCounterFlowActive: (active: boolean) => void;
   setSectorTurnstileCount: (gateId: string, count: number) => void;
+  setSectorTurnstileOverrides: (overrides: Record<string, number>) => void;
   setActiveSector: (sector: ActiveGateSector) => void;
   setActiveGateSector: (sector: ActiveGateSector) => void;
   setMatchPhase: (phase: MatchPhase) => void;
@@ -115,7 +144,33 @@ export interface SimulationStoreState {
   toggleModal: () => void;
   setIsBenchmarkOpen: (isBenchmarkOpen: boolean) => void;
   toggleBenchmark: () => void;
+  setAppMode: (mode: 'BLUEPRINT' | 'SIMULATION') => void;
   applyMitigationPreset: () => void;
+
+  // Master Safety Workflow Actions
+  setExperiment: (type: ExperimentType) => void;
+  setComparativeAudit: (audit: ComparativeAuditReport | null) => void;
+  setVerdict: (verdict: VerdictReport | null) => void;
+  setInteractionAnalysis: (analysis: CrowdInteractionAnalysis | null) => void;
+  setControllerDecisions: (decisions: ControllerDecisions | null) => void;
+  triggerIntervention: (type: InterventionType, enabled?: boolean) => void;
+
+  // Phase 2.1 Microscopic Gate & Heatmap Actions
+  heatmapVisualizationMode: HeatmapVisualizationMode;
+  setHeatmapVisualizationMode: (mode: HeatmapVisualizationMode) => void;
+  ticketScanLatency: number;
+  setTicketScanLatency: (latency: number) => void;
+  securityScreeningLatency: number;
+  setSecurityScreeningLatency: (latency: number) => void;
+  ticketRejectionRate: number;
+  setTicketRejectionRate: (rate: number) => void;
+  auxiliaryBypassEnabled: boolean;
+  toggleAuxiliaryBypass: () => void;
+  microGateMetrics: MicroGateMetrics | null;
+  setMicroGateMetrics: (metrics: MicroGateMetrics) => void;
+  gateLogs: GateLogEvent[];
+  addGateLog: (level: 'INFO' | 'WARNING' | 'ALERT', message: string, gateId: string) => void;
+  clearGateLogs: () => void;
 }
 
 export const useSimulationStore = create<SimulationStoreState>((set) => ({
@@ -131,9 +186,22 @@ export const useSimulationStore = create<SimulationStoreState>((set) => ({
   resetSignal: 0,
   isModalOpen: false,
   isBenchmarkOpen: false,
+  appMode: 'BLUEPRINT',
+
+  // Master Safety Workflow Initial State
+  activeExperiment: 'NORMAL',
+  scenarioConfig: PRESET_SCENARIOS.NORMAL,
+  currentVerdict: null,
+  comparativeAudit: null,
+  interactionAnalysis: null,
+  controllerDecisions: null,
 
   // KSCA 2-Tier Ground Truth Initial State
   currentView: 'MACRO_STADIUM',
+  simulationDisplayMode: 'FULL_STADIUM',
+  selectedOuterGateId: 'E11',
+  selectedInnerGateId: 'G15',
+  gateInflowOverrides: {},
   viewMode: 'stadium',
   stadiumViewMode: 'MACRO_VIEW',
   selectedSector: 'LINK_ROAD',
@@ -196,6 +264,7 @@ export const useSimulationStore = create<SimulationStoreState>((set) => ({
     counterFlowPenaltyPercent: 0,
     zoneADensity: 0.8,
     zoneBDensity: 0.8,
+    zoneCDensity: 0.8,
     displacedCrushAdvisory: null,
     fruinLOS: 'A',
     counterFlowActive: false
@@ -207,6 +276,51 @@ export const useSimulationStore = create<SimulationStoreState>((set) => ({
       viewMode: currentView === 'MACRO_STADIUM' ? 'stadium' : 'gate',
       stadiumViewMode: currentView === 'MACRO_STADIUM' ? 'MACRO_VIEW' : 'MICRO_VIEW_EAST',
       resetSignal: state.resetSignal + 1
+    })),
+
+  setSimulationDisplayMode: (simulationDisplayMode) => set({ simulationDisplayMode }),
+  setSelectedOuterGateId: (selectedOuterGateId) => set({ selectedOuterGateId }),
+  setSelectedInnerGateId: (selectedInnerGateId) => set({ selectedInnerGateId }),
+
+  // Phase 2.1 Microscopic Gate & Heatmap State & Actions
+  heatmapVisualizationMode: 'HEATMAP',
+  setHeatmapVisualizationMode: (heatmapVisualizationMode) => set({ heatmapVisualizationMode }),
+  ticketScanLatency: 0.4,
+  setTicketScanLatency: (ticketScanLatency) => set({ ticketScanLatency }),
+  securityScreeningLatency: 2.0,
+  setSecurityScreeningLatency: (securityScreeningLatency) => set({ securityScreeningLatency }),
+  ticketRejectionRate: 0.05,
+  setTicketRejectionRate: (ticketRejectionRate) => set({ ticketRejectionRate }),
+  auxiliaryBypassEnabled: true,
+  toggleAuxiliaryBypass: () => set((state) => ({ auxiliaryBypassEnabled: !state.auxiliaryBypassEnabled })),
+  microGateMetrics: null,
+  setMicroGateMetrics: (microGateMetrics) => set({ microGateMetrics }),
+  gateLogs: [
+    {
+      id: 'log-init',
+      timestamp: '00:00:01',
+      level: 'INFO',
+      message: 'Gate simulation initialized with KSCA two-tier access architecture.',
+      gateId: 'E11'
+    }
+  ],
+  addGateLog: (level, message, gateId) =>
+    set((state) => ({
+      gateLogs: [
+        {
+          id: `log-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+          timestamp: new Date().toLocaleTimeString('en-US', { hour12: false }),
+          level,
+          message,
+          gateId
+        },
+        ...state.gateLogs.slice(0, 49)
+      ]
+    })),
+  clearGateLogs: () => set({ gateLogs: [] }),
+  setGateInflowOverride: (gateId, rate) =>
+    set((state) => ({
+      gateInflowOverrides: { ...state.gateInflowOverrides, [gateId]: rate }
     })),
 
   setBaggageScanLatency: (baggageScanLatency) =>
@@ -226,6 +340,14 @@ export const useSimulationStore = create<SimulationStoreState>((set) => ({
       sectorTurnstileOverrides: {
         ...state.sectorTurnstileOverrides,
         [gateId]: Math.max(1, Math.min(12, count))
+      }
+    })),
+
+  setSectorTurnstileOverrides: (overrides) =>
+    set((state) => ({
+      sectorTurnstileOverrides: {
+        ...state.sectorTurnstileOverrides,
+        ...overrides
       }
     })),
 
@@ -374,7 +496,7 @@ export const useSimulationStore = create<SimulationStoreState>((set) => ({
 
   setInflowRate: (inflowRate) =>
     set((state) => {
-      const rate = Math.max(30, Math.min(800, inflowRate));
+      const rate = Math.max(30, Math.min(1200, inflowRate));
       return {
         inflowRate: rate,
         telemetry: {
@@ -552,6 +674,7 @@ export const useSimulationStore = create<SimulationStoreState>((set) => ({
   toggleModal: () => set((state) => ({ isModalOpen: !state.isModalOpen })),
   setIsBenchmarkOpen: (isBenchmarkOpen) => set({ isBenchmarkOpen }),
   toggleBenchmark: () => set((state) => ({ isBenchmarkOpen: !state.isBenchmarkOpen })),
+  setAppMode: (appMode) => set({ appMode }),
 
   /**
    * Simultaneously activates Upstream Baffles and Gates 4–6 Auxiliary Bypass
@@ -564,5 +687,45 @@ export const useSimulationStore = create<SimulationStoreState>((set) => ({
         auxGateActive: willEnable,
         overflowRerouteActive: willEnable
       };
-    })
+    }),
+
+  // Master Safety Workflow Implementations
+  setExperiment: (type) => {
+    const config = PRESET_SCENARIOS[type];
+    set((state) => ({
+      activeExperiment: type,
+      scenarioConfig: config,
+      inflowRate: config.baseInflowRate,
+      counterFlowActive: type === 'COUNTER_FLOW',
+      scannerFailureActive: type === 'GATE_FAILURE',
+      resetSignal: state.resetSignal + 1
+    }));
+  },
+
+  setComparativeAudit: (comparativeAudit) => set({ comparativeAudit }),
+  setVerdict: (currentVerdict) => set({ currentVerdict }),
+  setInteractionAnalysis: (interactionAnalysis) => set({ interactionAnalysis }),
+  setControllerDecisions: (controllerDecisions) => set({ controllerDecisions }),
+
+  triggerIntervention: (type, enabled) => {
+    set((state) => {
+      if (type === 'METERING') {
+        const next = enabled !== undefined ? enabled : !state.bafflesActive;
+        return { bafflesActive: next };
+      }
+      if (type === 'REROUTING') {
+        const next = enabled !== undefined ? enabled : !state.overflowRerouteActive;
+        return { overflowRerouteActive: next, auxGateActive: next };
+      }
+      if (type === 'DIRECTIONAL_SEPARATION') {
+        const next = enabled !== undefined ? enabled : !state.dividerActive;
+        return { dividerActive: next };
+      }
+      if (type === 'QUEUE_MANAGEMENT') {
+        const next = enabled !== undefined ? enabled : !state.sQueueEnabled;
+        return { sQueueEnabled: next };
+      }
+      return {};
+    });
+  }
 }));

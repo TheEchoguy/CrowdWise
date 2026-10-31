@@ -77,28 +77,75 @@ export function createGateCompound(
 }
 
 /**
- * Calculates unobstructed forward feeder lane waypoints for sector concourses:
- * Street Sidewalk -> Outer Security Frisking (E) -> Holding Concourse -> Inner Turnstiles (G) -> Vomitory Stairwells
+ * Computes world X position for an outer perimeter gate along the sector concourse arrival fence (y = 470)
+ */
+export function getSectorConcourseOuterGateX(
+  sector: RoadSectorId,
+  outerGateId: string,
+  canvasWidth: number = 960
+): number {
+  const sectorData = KSCA_STADIUM_SECTORS[sector] || KSCA_STADIUM_SECTORS.LINK_ROAD;
+  const numOuter = sectorData.outerGates.length;
+  if (numOuter <= 1) {
+    return canvasWidth / 2; // Centered at 480px for single plaza gates (e.g. MG Road E11)
+  }
+  const outerSpacing = (canvasWidth - 280) / (numOuter - 1);
+  const idx = sectorData.outerGates.indexOf(outerGateId);
+  const safeIdx = idx >= 0 ? idx : 0;
+  return 140 + safeIdx * outerSpacing;
+}
+
+/**
+ * Calculates sequential multi-stage feeder lane waypoints for sector concourses:
+ * Stage 1: Street Sidewalk (y=520) -> Outer Security Portal (y=470)
+ * Stage 2: Holding Concourse & S-Lanes (y=340 to 270)
+ * Stage 3: Automated NFC Scan Line (y=215)
+ * Stage 4: Turnstile / Security Booth Throat (y=172)
+ * Stage 5: Vomitory Stairwells (y=115) -> Grandstand Seating Bowl (y=40)
  */
 export function getSectorWaypoints(
   sector: RoadSectorId,
   targetInnerGateId: string,
-  startY: number
+  _startY: number,
+  outerGateId?: string,
+  sQueueActive: boolean = false
 ): { x: number; y: number }[] {
   const sectorData = KSCA_STADIUM_SECTORS[sector] || KSCA_STADIUM_SECTORS.LINK_ROAD;
   const innerGate = sectorData.innerGates.find((g) => g.id === targetInnerGateId) || sectorData.innerGates[0];
 
   const targetX = innerGate.x;
   const turnstileY = innerGate.y; // e.g. 160
+  const chosenOuterId = outerGateId || sectorData.outerGates[0];
+  const outerX = getSectorConcourseOuterGateX(sector, chosenOuterId);
 
-  return [
-    { x: targetX + (Math.random() - 0.5) * 40, y: Math.max(startY - 40, 430) }, // 1. Outer Street Sidewalk & Frisking Entrance
-    { x: targetX + (Math.random() - 0.5) * 20, y: 320 },                          // 2. Wide Intermediate Holding Concourse
-    { x: targetX, y: 220 },                                                        // 3. Automated NFC Scan Line Approach
-    { x: targetX, y: turnstileY + 10 },                                            // 4. Turnstile Throat
-    { x: targetX, y: turnstileY - 45 },                                            // 5. Post-Turnstile Vomitory Portal
-    { x: targetX + (Math.random() - 0.5) * 30, y: 40 }                             // 6. Seating Bowl Grandstand Tier
-  ];
+  const waypoints: { x: number; y: number }[] = [];
+
+  // 1. Physical Outer Gate Portal at Perimeter Boundary
+  waypoints.push({ x: outerX, y: 470 });
+
+  // 2. Intermediate Holding Concourse with Optional S-Lanes
+  if (sQueueActive) {
+    const midX = (outerX + targetX) / 2;
+    waypoints.push({ x: midX + 35, y: 390 });
+    waypoints.push({ x: midX - 35, y: 330 });
+    waypoints.push({ x: targetX + 15, y: 270 });
+  } else {
+    waypoints.push({ x: (outerX + targetX) / 2, y: 340 });
+  }
+
+  // 3. Automated NFC Fast-Scan Tap Line
+  waypoints.push({ x: targetX, y: 215 });
+
+  // 4. Security Screening & Turnstile Throat
+  waypoints.push({ x: targetX, y: turnstileY + 12 });
+
+  // 5. Post-Turnstile Vomitory Portal
+  waypoints.push({ x: targetX, y: turnstileY - 45 });
+
+  // 6. Seating Bowl Grandstand Tier
+  waypoints.push({ x: targetX + (Math.random() - 0.5) * 30, y: 40 });
+
+  return waypoints;
 }
 
 /**
