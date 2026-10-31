@@ -121,6 +121,9 @@ export interface AgentData {
   targetInnerGate?: string;
   isRejected?: boolean;
   isVipMedia?: boolean;
+  movementIntent?: 'INGRESS' | 'EGRESS' | 'REJECTED' | 'STAFF' | 'EMERGENCY';
+  routeId?: string;
+  desiredVelocity?: { vx: number; vy: number };
   friskingRemaining?: number;
   turnstileScanRemaining?: number;
 

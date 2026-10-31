@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { useSimulationStore } from '../../state/useSimulationStore';
 import { CHINNASWAMY_CONFIG } from '../../engine/ChinnaswamyData';
 import { GATE_CONNECTIVITY_CATALOG } from '../../stadium/network/gateConnectivity';
+import { PhysicsValidationPanel } from './PhysicsValidationPanel';
 import {
   Activity,
   ArrowRightCircle,
@@ -58,6 +59,8 @@ export const RightTelemetry: React.FC = () => {
   const gateLogs = useSimulationStore((s) => s.gateLogs);
   const clearGateLogs = useSimulationStore((s) => s.clearGateLogs);
   const [logScope, setLogScope] = useState<'SELECTED_GATE' | 'VENUE'>('SELECTED_GATE');
+  const physicsDeckTab = useSimulationStore((s) => s.physicsDeckTab);
+  const setPhysicsDeckTab = useSimulationStore((s) => s.setPhysicsDeckTab);
 
   const handleDeployExtraCounters = () => {
     addCounter('gate-1');
@@ -155,6 +158,28 @@ export const RightTelemetry: React.FC = () => {
           badge: 'bg-slate-800 border-slate-700 text-slate-300',
           ring: ''
         };
+
+  if (physicsDeckTab === 'PHYSICS_VALIDATION') {
+    return (
+      <div className="flex flex-col h-full overflow-hidden gap-2">
+        <div className="flex items-center justify-between p-2 rounded-lg bg-slate-900 border border-slate-800 shrink-0">
+          <div className="flex items-center gap-1.5">
+            <Scale className="w-4 h-4 text-cyan-400" />
+            <span className="text-xs font-bold uppercase text-slate-100">Physics Validation Deck</span>
+          </div>
+          <button
+            onClick={() => setPhysicsDeckTab('TELEMETRY')}
+            className="px-2.5 py-1 text-[10px] font-bold rounded bg-cyan-950/80 border border-cyan-700/80 hover:bg-cyan-900 text-cyan-300 transition"
+          >
+            Back to Telemetry Deck
+          </button>
+        </div>
+        <div className="flex-1 min-h-0">
+          <PhysicsValidationPanel />
+        </div>
+      </div>
+    );
+  }
 
   // Dedicated Microscopic Gate View Telemetry & Operations Panel
   if (simulationDisplayMode === 'GATE_VIEW') {
@@ -496,6 +521,14 @@ export const RightTelemetry: React.FC = () => {
           </h2>
         </div>
         <div className="flex items-center gap-1.5">
+          <button
+            onClick={() => setPhysicsDeckTab('PHYSICS_VALIDATION')}
+            className="flex items-center gap-1 px-2 py-0.5 text-[10px] font-bold rounded bg-emerald-950/80 border border-emerald-700/80 hover:bg-emerald-900 text-emerald-300 transition"
+            title="Switch to Empirical Physics Validation Deck"
+          >
+            <Scale className="w-3 h-3 text-emerald-400" />
+            <span>Physics Audit</span>
+          </button>
           {telemetry.metroBurstActive && (
             <span className="text-[10px] font-mono text-rose-400 bg-rose-950/80 px-2 py-0.5 rounded border border-rose-700 flex items-center gap-1 animate-pulse">
               <Train className="w-3 h-3 text-rose-400" />

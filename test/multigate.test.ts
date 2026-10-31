@@ -1555,3 +1555,6 @@ console.log('✓ Test 80 Passed: Evaluation reliability safeguards & inconclusiv
 console.log('\n=============================================================');
 console.log('✓ ALL 95 PREDICTIVE SAFETY, INTELLIGENCE & GATE TESTS PASSED!');
 console.log('=============================================================\n');
+
+import { runPhysicsValidationTests } from '../src/physics-validation/__tests__/physicsValidation.test.ts';
+runPhysicsValidationTests();

@@ -1,6 +1,6 @@
 import React from 'react';
 import { useSimulationStore } from '../../state/useSimulationStore';
-import { ShieldAlert, FileText, WifiOff, Users, Activity, Cpu, Building2, FlaskConical } from 'lucide-react';
+import { ShieldAlert, FileText, WifiOff, Users, Activity, Cpu, Building2, FlaskConical, Scale } from 'lucide-react';
 
 export const Header: React.FC = () => {
   const telemetry = useSimulationStore((s) => s.telemetry);
@@ -10,6 +10,8 @@ export const Header: React.FC = () => {
   const toggleSafetyIntelligence = useSimulationStore((s) => s.toggleSafetyIntelligence);
   const appMode = useSimulationStore((s) => s.appMode);
   const setAppMode = useSimulationStore((s) => s.setAppMode);
+  const physicsDeckTab = useSimulationStore((s) => s.physicsDeckTab);
+  const setPhysicsDeckTab = useSimulationStore((s) => s.setPhysicsDeckTab);
 
   return (
     <header className="flex flex-col sm:flex-row items-center justify-between gap-3 px-5 py-3 bg-slate-900/90 border-b border-slate-800 backdrop-blur-md">
@@ -98,6 +100,23 @@ export const Header: React.FC = () => {
         >
           <Activity className="w-3.5 h-3.5 text-indigo-400" />
           <span>Safety Intelligence</span>
+        </button>
+
+        {/* Physics Validation Deck Toggle */}
+        <button
+          onClick={() => {
+            if (appMode === 'BLUEPRINT') setAppMode('SIMULATION');
+            setPhysicsDeckTab(physicsDeckTab === 'PHYSICS_VALIDATION' ? 'TELEMETRY' : 'PHYSICS_VALIDATION');
+          }}
+          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg border font-bold text-xs shadow-md transition ${
+            physicsDeckTab === 'PHYSICS_VALIDATION'
+              ? 'border-emerald-500 bg-emerald-950 text-emerald-300'
+              : 'border-emerald-700/80 bg-emerald-950/70 hover:bg-emerald-900/80 text-emerald-300'
+          }`}
+          title="Toggle Empirical Physics Credibility & Spatial Risk Displacement Deck"
+        >
+          <Scale className="w-3.5 h-3.5" />
+          <span>Physics Audit</span>
         </button>
 
         {/* Physics Benchmark Modal Trigger */}
