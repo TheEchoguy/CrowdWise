@@ -36,6 +36,8 @@ export interface SimulationStoreState {
   resetSignal: number;        // incremented to trigger reset
   isModalOpen: boolean;       // default false
   isBenchmarkOpen: boolean;   // default false
+  physicsDeckTab: 'TELEMETRY' | 'PHYSICS_VALIDATION';
+  setPhysicsDeckTab: (tab: 'TELEMETRY' | 'PHYSICS_VALIDATION') => void;
   appMode: 'BLUEPRINT' | 'SIMULATION'; // Phase 1 Blueprint vs Simulation Lab
 
   // Master Safety Workflow State
@@ -186,6 +188,8 @@ export const useSimulationStore = create<SimulationStoreState>((set) => ({
   resetSignal: 0,
   isModalOpen: false,
   isBenchmarkOpen: false,
+  physicsDeckTab: 'TELEMETRY',
+  setPhysicsDeckTab: (physicsDeckTab) => set({ physicsDeckTab }),
   appMode: 'BLUEPRINT',
 
   // Master Safety Workflow Initial State
