@@ -124,6 +124,9 @@ export function updateAgentPhysics(
     vDesiredY = desiredSpeedPx * (dy / distToTarget);
   }
 
+  agent.desiredVelocity = { vx: vDesiredX, vy: vDesiredY };
+  agent.movementIntent = agent.movementIntent || (agent.isRejected ? 'REJECTED' : agent.isReverse ? 'EGRESS' : 'INGRESS');
+
   fx += (vDesiredX - agent.vx) / tau;
   fy += (vDesiredY - agent.vy) / tau;
 

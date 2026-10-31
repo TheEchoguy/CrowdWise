@@ -684,3 +684,6 @@ console.log('✓ Test 40 Passed: Heatmap Fruin threshold alignment (Green <1.5, 
 console.log('\n=============================================================');
 console.log('✓ ALL 40 PREDICTIVE SAFETY, BLUEPRINT & GATE TESTS PASSED!');
 console.log('=============================================================\n');
+
+import { runPhysicsValidationTests } from '../src/physics-validation/__tests__/physicsValidation.test.ts';
+runPhysicsValidationTests();
