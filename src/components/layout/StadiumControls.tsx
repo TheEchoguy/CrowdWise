@@ -9,7 +9,13 @@ import {
   AlertTriangle,
   Bot,
   Flame,
-  ArrowRight
+  ArrowRight,
+  Sliders,
+  ShieldCheck,
+  Plus,
+  Minus,
+  DoorOpen,
+  Zap
 } from 'lucide-react';
 import { MatchPhase } from '../../types/simulation';
 
@@ -29,17 +35,34 @@ export const StadiumControls: React.FC = () => {
   const sectorInflow = useSimulationStore((s) => s.sectorInflow);
   const setSectorInflow = useSimulationStore((s) => s.setSectorInflow);
 
+  const inflowRate = useSimulationStore((s) => s.inflowRate);
+  const setInflowRate = useSimulationStore((s) => s.setInflowRate);
+  const gateLatency = useSimulationStore((s) => s.gateLatency);
+  const setGateLatency = useSimulationStore((s) => s.setGateLatency);
+  const walkingSpeed = useSimulationStore((s) => s.walkingSpeed);
+  const setWalkingSpeed = useSimulationStore((s) => s.setWalkingSpeed);
+
+  const counterCountGate1 = useSimulationStore((s) => s.counterCountGate1);
+  const counterCountGate2 = useSimulationStore((s) => s.counterCountGate2);
+  const addCounter = useSimulationStore((s) => s.addCounter);
+  const removeCounter = useSimulationStore((s) => s.removeCounter);
+  const sQueueEnabled = useSimulationStore((s) => s.sQueueEnabled);
+  const setSQueueEnabled = useSimulationStore((s) => s.setSQueueEnabled);
+  const overflowRerouteActive = useSimulationStore((s) => s.overflowRerouteActive);
+  const toggleOverflowReroute = useSimulationStore((s) => s.toggleOverflowReroute);
+  const securityCheckSpeed = useSimulationStore((s) => s.securityCheckSpeed);
+
   const triggerMetroPulse = useSimulationStore((s) => s.triggerMetroPulse);
   const scannerFailureActive = useSimulationStore((s) => s.scannerFailureActive);
   const toggleScannerFailure = useSimulationStore((s) => s.toggleScannerFailure);
   const autonomousRerouteActive = useSimulationStore((s) => s.autonomousRerouteActive);
   const toggleAutonomousReroute = useSimulationStore((s) => s.toggleAutonomousReroute);
 
-  const matchPhases: { id: MatchPhase; label: string; desc: string; icon: string }[] = [
-    { id: 'PRE_GATES', label: 'Gates Open', desc: 'Pre-Match Steady Inflow', icon: '🟢' },
-    { id: 'METRO_PEAK', label: 'Metro Peak', desc: 'MG Road Train Surge', icon: '🚆' },
-    { id: 'ANTHEM_RUSH', label: 'Anthem Rush', desc: 'T-15min Venue Rush', icon: '⚡' },
-    { id: 'EGRESS', label: 'Match Egress', desc: 'Post-Match Mass Egress', icon: '🚪' }
+  const matchPhases: { id: MatchPhase; label: string; desc: string; iconType: 'green' | 'metro' | 'rush' | 'egress' }[] = [
+    { id: 'PRE_GATES', label: 'Gates Open', desc: 'Pre-Match Steady Inflow', iconType: 'green' },
+    { id: 'METRO_PEAK', label: 'Metro Peak', desc: 'MG Road Train Surge', iconType: 'metro' },
+    { id: 'ANTHEM_RUSH', label: 'Anthem Rush', desc: 'T-15min Venue Rush', iconType: 'rush' },
+    { id: 'EGRESS', label: 'Match Egress', desc: 'Post-Match Mass Egress', iconType: 'egress' }
   ];
 
   return (
@@ -105,13 +128,13 @@ export const StadiumControls: React.FC = () => {
         className="w-full flex items-center justify-between p-2 rounded-lg bg-gradient-to-r from-orange-950/60 to-amber-950/40 border border-orange-700/60 hover:border-orange-500 text-orange-200 transition group shadow-sm"
       >
         <div className="flex items-center gap-2">
-          <span className="text-sm">🚪</span>
+          <DoorOpen className="w-4 h-4 text-orange-400" />
           <div className="text-left">
             <div className="text-[11px] font-bold text-orange-300">
-              Switch to Gate Ingress View
+              Switch to East Stand Gates 1–6 Concourse
             </div>
             <div className="text-[9px] text-orange-400/80 font-mono">
-              Inspect S-queue, Turnstiles & Staffing
+              Inspect S-Queue, Fast NFC Tap & Security Staffing
             </div>
           </div>
         </div>
@@ -136,7 +159,10 @@ export const StadiumControls: React.FC = () => {
               }`}
             >
               <div className="flex items-center gap-1.5">
-                <span className="text-xs">{phase.icon}</span>
+                {phase.iconType === 'green' && <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 shrink-0" />}
+                {phase.iconType === 'metro' && <Train className="w-3.5 h-3.5 text-rose-400 shrink-0" />}
+                {phase.iconType === 'rush' && <Zap className="w-3.5 h-3.5 text-amber-400 shrink-0" />}
+                {phase.iconType === 'egress' && <DoorOpen className="w-3.5 h-3.5 text-cyan-400 shrink-0" />}
                 <span className="text-[11px] leading-tight font-bold">{phase.label}</span>
               </div>
               <span className="text-[8px] text-slate-400 font-mono">{phase.desc}</span>
@@ -154,11 +180,11 @@ export const StadiumControls: React.FC = () => {
           <span className="text-[9px] font-mono text-cyan-400">p/min</span>
         </div>
 
-        {/* East Stand (G1-6) */}
+        {/* East Stand (Gates 1-6) */}
         <div className="space-y-1">
           <div className="flex justify-between items-center text-[10px]">
             <span className="font-semibold text-orange-300 flex items-center gap-1">
-              <span>East Stand (G1–6 Metro)</span>
+              <span>East Stand (Gates 1–6 Metro Feed)</span>
             </span>
             <span className="font-mono text-orange-400 font-bold px-1.5 py-0.2 rounded bg-slate-900 border border-slate-800">
               {sectorInflow['G1-G6_EAST'] ?? 300} p/min
@@ -175,10 +201,10 @@ export const StadiumControls: React.FC = () => {
           />
         </div>
 
-        {/* North Stand (G16-21) */}
+        {/* North Stand (Gates 16-21) */}
         <div className="space-y-1">
           <div className="flex justify-between items-center text-[10px]">
-            <span className="font-semibold text-sky-300">North Stand (G16–21 Queen's Rd)</span>
+            <span className="font-semibold text-sky-300">North Stand (Gates 16–21 Queen's Rd)</span>
             <span className="font-mono text-sky-400 font-bold px-1.5 py-0.2 rounded bg-slate-900 border border-slate-800">
               {sectorInflow['G16-G21_NORTH'] ?? 200} p/min
             </span>
@@ -194,10 +220,10 @@ export const StadiumControls: React.FC = () => {
           />
         </div>
 
-        {/* South Stand (G7-11) */}
+        {/* South Stand (Gates 7-11) */}
         <div className="space-y-1">
           <div className="flex justify-between items-center text-[10px]">
-            <span className="font-semibold text-purple-300">South Stand (G7–11 Cubbon Rd)</span>
+            <span className="font-semibold text-purple-300">South Stand (Gates 7–11 Cubbon Rd)</span>
             <span className="font-mono text-purple-400 font-bold px-1.5 py-0.2 rounded bg-slate-900 border border-slate-800">
               {sectorInflow['G7-G11_SOUTH'] ?? 180} p/min
             </span>
@@ -213,10 +239,10 @@ export const StadiumControls: React.FC = () => {
           />
         </div>
 
-        {/* West Stand (G12-15) */}
+        {/* West Stand (Gates 12-15) */}
         <div className="space-y-1">
           <div className="flex justify-between items-center text-[10px]">
-            <span className="font-semibold text-amber-300">West Stand (G12–15 Pavilion)</span>
+            <span className="font-semibold text-amber-300">West Stand (Gates 12–15 Pavilion)</span>
             <span className="font-mono text-amber-400 font-bold px-1.5 py-0.2 rounded bg-slate-900 border border-slate-800">
               {sectorInflow['G12-G15_WEST'] ?? 100} p/min
             </span>
@@ -230,6 +256,186 @@ export const StadiumControls: React.FC = () => {
             onChange={(e) => setSectorInflow('G12-G15_WEST', Number(e.target.value))}
             className="w-full h-1.5 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-amber-500"
           />
+        </div>
+      </div>
+
+      {/* 5b. Flow & Calibration Sliders */}
+      <div className="space-y-2.5 p-2.5 rounded-lg bg-slate-950/70 border border-slate-800">
+        <div className="flex items-center justify-between">
+          <label className="text-[10px] font-mono font-semibold text-slate-300 uppercase tracking-wider flex items-center gap-1.5">
+            <Sliders className="w-3.5 h-3.5 text-cyan-400" />
+            <span>Master Flow & Physics Controls</span>
+          </label>
+          <span className="text-[9px] font-mono text-cyan-400 bg-cyan-950/80 px-1.5 py-0.5 rounded border border-cyan-800/80">
+            GLOBAL
+          </span>
+        </div>
+
+        {/* Global Inflow Rate Slider */}
+        <div className="space-y-1">
+          <div className="flex justify-between items-center text-xs">
+            <span className="font-semibold text-slate-300">Total Stadium Inflow</span>
+            <span className="font-mono text-xs text-cyan-400 font-bold px-1.5 py-0.5 rounded bg-slate-900 border border-slate-800">
+              {inflowRate} p/min
+            </span>
+          </div>
+          <input
+            type="range"
+            min="60"
+            max="1200"
+            step="20"
+            value={inflowRate}
+            onChange={(e) => setInflowRate(Number(e.target.value))}
+            className="w-full h-1.5 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-cyan-500"
+          />
+          <div className="flex justify-between text-[10px] text-slate-500 font-mono">
+            <span>60</span>
+            <span>360 (Nominal)</span>
+            <span>1,200 (Surge)</span>
+          </div>
+        </div>
+
+        {/* Turnstile Scan Latency */}
+        <div className="space-y-1">
+          <div className="flex justify-between items-center text-xs">
+            <span className="font-semibold text-slate-300">Turnstile Scan Latency</span>
+            <span className="font-mono text-xs text-amber-400 font-bold px-1.5 py-0.5 rounded bg-slate-900 border border-slate-800">
+              {gateLatency.toFixed(1)}s / person
+            </span>
+          </div>
+          <input
+            type="range"
+            min="1.0"
+            max="12.0"
+            step="0.5"
+            value={gateLatency}
+            onChange={(e) => setGateLatency(Number(e.target.value))}
+            className="w-full h-1.5 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-amber-500"
+          />
+          <div className="flex justify-between text-[10px] text-slate-500 font-mono">
+            <span>1.0s (NFC)</span>
+            <span>4.0s (Nominal)</span>
+            <span>12.0s (Outage)</span>
+          </div>
+        </div>
+
+        {/* Desired Walking Speed */}
+        <div className="space-y-1">
+          <div className="flex justify-between items-center text-xs">
+            <span className="font-semibold text-slate-300">Desired Walking Speed</span>
+            <span className="font-mono text-xs text-emerald-400 font-bold px-1.5 py-0.5 rounded bg-slate-900 border border-slate-800">
+              {walkingSpeed.toFixed(1)} m/s
+            </span>
+          </div>
+          <input
+            type="range"
+            min="0.8"
+            max="2.5"
+            step="0.1"
+            value={walkingSpeed}
+            onChange={(e) => setWalkingSpeed(Number(e.target.value))}
+            className="w-full h-1.5 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-emerald-500"
+          />
+          <div className="flex justify-between text-[10px] text-slate-500 font-mono">
+            <span>0.8 m/s (Dense)</span>
+            <span>1.3 m/s (Nominal)</span>
+            <span>2.5 m/s (Panic)</span>
+          </div>
+        </div>
+      </div>
+
+      {/* 5c. Dynamic Security Staffing & Turnstile Control */}
+      <div className="space-y-2 p-2.5 rounded-lg bg-slate-950/70 border border-slate-800">
+        <div className="flex items-center justify-between">
+          <label className="text-[10px] font-mono font-semibold text-slate-300 uppercase tracking-wider flex items-center gap-1.5">
+            <ShieldCheck className="w-3.5 h-3.5 text-cyan-400" />
+            <span>Dynamic Security Staffing</span>
+          </label>
+          <span className="text-[9px] font-mono text-emerald-400">STAFFING</span>
+        </div>
+
+        {/* Gate 1 Booths Stepper */}
+        <div className="flex items-center justify-between p-2 rounded-md bg-slate-900 border border-slate-800">
+          <div className="flex flex-col">
+            <span className="text-xs font-bold text-amber-300">Gate 1 Security Booths</span>
+            <span className="text-[9px] font-mono text-slate-400">
+              Capacity: {Math.round((60 / securityCheckSpeed) * counterCountGate1)} p/min
+            </span>
+          </div>
+          <div className="flex items-center gap-1.5">
+            <button
+              onClick={() => removeCounter('gate-1')}
+              disabled={counterCountGate1 <= 2}
+              className="w-6 h-6 rounded bg-slate-800 hover:bg-slate-700 disabled:opacity-30 text-amber-300 font-bold flex items-center justify-center border border-slate-700 active:scale-95 transition"
+              title="Remove 1 Security Counter"
+            >
+              <Minus className="w-3 h-3" />
+            </button>
+            <span className="font-mono text-xs font-extrabold text-amber-400 w-6 text-center">
+              {counterCountGate1}
+            </span>
+            <button
+              onClick={() => addCounter('gate-1')}
+              disabled={counterCountGate1 >= 10}
+              className="w-6 h-6 rounded bg-amber-600 hover:bg-amber-500 disabled:opacity-30 text-slate-950 font-bold flex items-center justify-center active:scale-95 transition shadow-sm"
+              title="Add 1 Security Counter (+60 p/min)"
+            >
+              <Plus className="w-3 h-3" />
+            </button>
+          </div>
+        </div>
+
+        {/* Gate 2 Booths Stepper */}
+        <div className="flex items-center justify-between p-2 rounded-md bg-slate-900 border border-slate-800">
+          <div className="flex flex-col">
+            <span className="text-xs font-bold text-cyan-300">Gate 2 Auxiliary Booths</span>
+            <span className="text-[9px] font-mono text-slate-400">
+              Capacity: {Math.round((60 / securityCheckSpeed) * counterCountGate2)} p/min
+            </span>
+          </div>
+          <div className="flex items-center gap-1.5">
+            <button
+              onClick={() => removeCounter('gate-2')}
+              disabled={counterCountGate2 <= 1}
+              className="w-6 h-6 rounded bg-slate-800 hover:bg-slate-700 disabled:opacity-30 text-cyan-300 font-bold flex items-center justify-center border border-slate-700 active:scale-95 transition"
+              title="Remove 1 Auxiliary Counter"
+            >
+              <Minus className="w-3 h-3" />
+            </button>
+            <span className="font-mono text-xs font-extrabold text-cyan-400 w-6 text-center">
+              {counterCountGate2}
+            </span>
+            <button
+              onClick={() => addCounter('gate-2')}
+              disabled={counterCountGate2 >= 8}
+              className="w-6 h-6 rounded bg-cyan-600 hover:bg-cyan-500 disabled:opacity-30 text-slate-950 font-bold flex items-center justify-center active:scale-95 transition shadow-sm"
+              title="Add 1 Auxiliary Counter (+60 p/min)"
+            >
+              <Plus className="w-3 h-3" />
+            </button>
+          </div>
+        </div>
+
+        {/* Queue Structure Controls */}
+        <div className="pt-1.5 space-y-1.5 border-t border-slate-800/80">
+          <label className="flex items-center gap-2 cursor-pointer text-xs">
+            <input
+              type="checkbox"
+              checked={sQueueEnabled}
+              onChange={(e) => setSQueueEnabled(e.target.checked)}
+              className="w-3.5 h-3.5 accent-orange-500 rounded cursor-pointer"
+            />
+            <span className="text-[10px] text-slate-300 font-semibold">Enforce S-Curve Snake Queue</span>
+          </label>
+          <label className="flex items-center gap-2 cursor-pointer text-xs">
+            <input
+              type="checkbox"
+              checked={overflowRerouteActive}
+              onChange={toggleOverflowReroute}
+              className="w-3.5 h-3.5 accent-cyan-500 rounded cursor-pointer"
+            />
+            <span className="text-[10px] text-slate-300 font-semibold">Dynamic Load Balancing (Divert to Gate 2)</span>
+          </label>
         </div>
       </div>
 

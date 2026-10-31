@@ -11,7 +11,8 @@ import {
   ArrowLeft,
   ShieldCheck,
   Split,
-  Bot
+  Bot,
+  Sliders
 } from 'lucide-react';
 import { ActiveGateSector } from '../../types/simulation';
 
@@ -25,6 +26,13 @@ export const GateControls: React.FC = () => {
   const setViewMode = useSimulationStore((s) => s.setViewMode);
   const activeSector = useSimulationStore((s) => s.activeSector);
   const setActiveSector = useSimulationStore((s) => s.setActiveSector);
+
+  const inflowRate = useSimulationStore((s) => s.inflowRate);
+  const setInflowRate = useSimulationStore((s) => s.setInflowRate);
+  const gateLatency = useSimulationStore((s) => s.gateLatency);
+  const setGateLatency = useSimulationStore((s) => s.setGateLatency);
+  const walkingSpeed = useSimulationStore((s) => s.walkingSpeed);
+  const setWalkingSpeed = useSimulationStore((s) => s.setWalkingSpeed);
 
   const counterCountGate1 = useSimulationStore((s) => s.counterCountGate1);
   const counterCountGate2 = useSimulationStore((s) => s.counterCountGate2);
@@ -43,10 +51,10 @@ export const GateControls: React.FC = () => {
   const triggerBurstRush = useSimulationStore((s) => s.triggerBurstRush);
 
   const sectors: { id: ActiveGateSector; name: string; tag: string; color: string }[] = [
-    { id: 'G1-G6_EAST', name: 'East Stand (G1–6)', tag: 'MG Metro', color: 'orange' },
-    { id: 'G16-G21_NORTH', name: 'North Stand (G16–21)', tag: "Queen's Rd", color: 'sky' },
-    { id: 'G7-G11_SOUTH', name: 'South Stand (G7–11)', tag: 'Cubbon Rd', color: 'purple' },
-    { id: 'G12-G15_WEST', name: 'West Stand (G12–15)', tag: 'VIP Pavilion', color: 'amber' }
+    { id: 'G1-G6_EAST', name: 'East Stand (Gates 1–6)', tag: 'MG Road Metro Feed', color: 'orange' },
+    { id: 'G16-G21_NORTH', name: 'North Stand (Gates 16–21)', tag: "Queen's Road Arterial", color: 'sky' },
+    { id: 'G7-G11_SOUTH', name: 'South Stand (Gates 7–11)', tag: 'Cubbon Road Promenade', color: 'purple' },
+    { id: 'G12-G15_WEST', name: 'West Stand (Gates 12–15)', tag: 'VIP Pavilion & Club', color: 'amber' }
   ];
 
   return (
@@ -128,6 +136,91 @@ export const GateControls: React.FC = () => {
               <span className="text-[8px] text-slate-400">{sec.tag}</span>
             </button>
           ))}
+        </div>
+      </div>
+
+      {/* Parameter Sliders: Inflow Rate, Turnstile Latency, Walking Speed */}
+      <div className="space-y-2.5 p-2.5 rounded-lg bg-slate-950/70 border border-slate-800">
+        <div className="flex items-center justify-between">
+          <label className="text-[10px] font-mono font-semibold text-slate-300 uppercase tracking-wider flex items-center gap-1.5">
+            <Sliders className="w-3.5 h-3.5 text-cyan-400" />
+            <span>Flow & Calibration Controls</span>
+          </label>
+          <span className="text-[9px] font-mono text-cyan-400 bg-cyan-950/80 px-1.5 py-0.5 rounded border border-cyan-800/80">
+            UNIFIED
+          </span>
+        </div>
+
+        {/* Inflow Rate */}
+        <div className="space-y-1">
+          <div className="flex justify-between items-center text-xs">
+            <span className="font-semibold text-slate-300">Inflow Rate</span>
+            <span className="font-mono text-xs text-cyan-400 font-bold px-1.5 py-0.5 rounded bg-slate-900 border border-slate-800">
+              {inflowRate} p/min
+            </span>
+          </div>
+          <input
+            type="range"
+            min="60"
+            max="1200"
+            step="20"
+            value={inflowRate}
+            onChange={(e) => setInflowRate(Number(e.target.value))}
+            className="w-full h-1.5 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-cyan-500"
+          />
+          <div className="flex justify-between text-[10px] text-slate-500 font-mono">
+            <span>60</span>
+            <span>360 (Nominal)</span>
+            <span>1,200 (Surge)</span>
+          </div>
+        </div>
+
+        {/* Turnstile / Frisking Latency */}
+        <div className="space-y-1">
+          <div className="flex justify-between items-center text-xs">
+            <span className="font-semibold text-slate-300">Turnstile Scan Latency</span>
+            <span className="font-mono text-xs text-amber-400 font-bold px-1.5 py-0.5 rounded bg-slate-900 border border-slate-800">
+              {gateLatency.toFixed(1)}s / person
+            </span>
+          </div>
+          <input
+            type="range"
+            min="1.0"
+            max="12.0"
+            step="0.5"
+            value={gateLatency}
+            onChange={(e) => setGateLatency(Number(e.target.value))}
+            className="w-full h-1.5 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-amber-500"
+          />
+          <div className="flex justify-between text-[10px] text-slate-500 font-mono">
+            <span>1.0s (NFC)</span>
+            <span>4.0s (Nominal)</span>
+            <span>12.0s (Outage)</span>
+          </div>
+        </div>
+
+        {/* Desired Walking Speed */}
+        <div className="space-y-1">
+          <div className="flex justify-between items-center text-xs">
+            <span className="font-semibold text-slate-300">Desired Walking Speed</span>
+            <span className="font-mono text-xs text-emerald-400 font-bold px-1.5 py-0.5 rounded bg-slate-900 border border-slate-800">
+              {walkingSpeed.toFixed(1)} m/s
+            </span>
+          </div>
+          <input
+            type="range"
+            min="0.8"
+            max="2.5"
+            step="0.1"
+            value={walkingSpeed}
+            onChange={(e) => setWalkingSpeed(Number(e.target.value))}
+            className="w-full h-1.5 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-emerald-500"
+          />
+          <div className="flex justify-between text-[10px] text-slate-500 font-mono">
+            <span>0.8 m/s (Dense)</span>
+            <span>1.3 m/s (Nominal)</span>
+            <span>2.5 m/s (Panic)</span>
+          </div>
         </div>
       </div>
 

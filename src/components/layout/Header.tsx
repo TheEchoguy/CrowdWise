@@ -1,10 +1,13 @@
 import React from 'react';
 import { useSimulationStore } from '../../state/useSimulationStore';
-import { ShieldAlert, FileText, WifiOff, Users, Activity } from 'lucide-react';
+import { ShieldAlert, FileText, WifiOff, Users, Activity, Cpu, Building2 } from 'lucide-react';
 
 export const Header: React.FC = () => {
   const telemetry = useSimulationStore((s) => s.telemetry);
   const toggleModal = useSimulationStore((s) => s.toggleModal);
+  const toggleBenchmark = useSimulationStore((s) => s.toggleBenchmark);
+  const appMode = useSimulationStore((s) => s.appMode);
+  const setAppMode = useSimulationStore((s) => s.setAppMode);
 
   return (
     <header className="flex flex-col sm:flex-row items-center justify-between gap-3 px-5 py-3 bg-slate-900/90 border-b border-slate-800 backdrop-blur-md">
@@ -56,6 +59,35 @@ export const Header: React.FC = () => {
           </div>
         )}
 
+        {/* Stadium Blueprint Mode Toggle */}
+        <button
+          onClick={() => setAppMode(appMode === 'BLUEPRINT' ? 'SIMULATION' : 'BLUEPRINT')}
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-cyan-500/80 bg-cyan-950/80 hover:bg-cyan-900 text-cyan-300 font-bold text-xs shadow-md transition"
+          title="Switch to Authentic 2D Vector CAD Blueprint"
+        >
+          {appMode === 'BLUEPRINT' ? (
+            <>
+              <Cpu className="w-3.5 h-3.5 text-cyan-400" />
+              <span>Simulation Lab</span>
+            </>
+          ) : (
+            <>
+              <Building2 className="w-3.5 h-3.5 text-cyan-400" />
+              <span>Stadium Blueprint</span>
+            </>
+          )}
+        </button>
+
+        {/* Physics Benchmark Modal Trigger */}
+        <button
+          onClick={toggleBenchmark}
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-cyan-700/80 bg-cyan-950/70 hover:bg-cyan-900/80 text-cyan-300 font-bold text-xs shadow-md transition"
+          title="Run 1k, 5k, 10k Pure Social Force Engine Benchmark"
+        >
+          <Cpu className="w-3.5 h-3.5" />
+          <span>Benchmark</span>
+        </button>
+
         {/* Export Safety Brief Modal Trigger */}
         <button
           onClick={toggleModal}
@@ -68,4 +100,3 @@ export const Header: React.FC = () => {
     </header>
   );
 };
-

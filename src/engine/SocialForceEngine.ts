@@ -43,7 +43,7 @@ export function updateAgentPhysics(
   baseSpeed: number, // in m/s (e.g. 1.3 m/s)
   walls: Wall[],
   baffles: Wall[],
-  sQueueEnabled: boolean = true
+  _sQueueEnabled: boolean = true
 ): void {
   if (agent.active === false) return;
 
@@ -57,7 +57,11 @@ export function updateAgentPhysics(
   }
 
   const pixelsPerMeter = 20;
-  const desiredSpeedPx = (agent.desiredSpeed || baseSpeed) * pixelsPerMeter;
+  // Empirical Fruin Flow Validation [Fruin 1971, Weidmann 1993]
+  // v(rho) = v0 * max(0.01, 1 - rho / 5.2). As local density reaches 5.2 p/m², forward speed drops to near-zero.
+  const rhoMax = 5.2;
+  const fruinDecay = agent.density ? Math.max(0.01, 1.0 - (agent.density / rhoMax)) : 1.0;
+  const desiredSpeedPx = (agent.desiredSpeed || baseSpeed) * pixelsPerMeter * fruinDecay;
   let tau = 0.5; // Relaxation time (seconds)
 
   let fx = 0;
@@ -67,66 +71,47 @@ export function updateAgentPhysics(
   let targetX = agent.targetX;
   let targetY = agent.targetY;
 
-  if (agent.isClearedConcourse) {
-    // Patrons cleared through security disperse smoothly into the inner stadium concourse
+  // Counter-Flow Shockwave: If rejected at inner gate, reverse path toward street
+  if (agent.isRejected) {
+    targetY = 510;
+    tau = 0.4;
+  } else if (agent.isCleared || agent.isClearedConcourse) {
     targetX = agent.concourseDispersalTarget?.x ?? agent.x;
     targetY = agent.concourseDispersalTarget?.y ?? -20;
     tau = 0.3;
-  } else if (agent.waypoints && agent.waypoints.length > 0 && agent.currentWaypointIndex < agent.waypoints.length) {
-    let wp = agent.waypoints[agent.currentWaypointIndex];
+  } else if (agent.waypoints && agent.waypoints.length > 0) {
+    if (agent.currentWaypointIndex < agent.waypoints.length) {
+      const wp = agent.waypoints[agent.currentWaypointIndex];
+      targetX = wp.x;
+      targetY = wp.y;
+      agent.targetX = wp.x;
+      agent.targetY = wp.y;
+      tau = 0.35;
 
-    // Never let an agent target a coordinate behind them during forward ingress
-    while (
-      agent.currentWaypointIndex < agent.waypoints.length - 1 &&
-      agent.stage === 1 &&
-      wp.y > agent.y + 12
-    ) {
-      agent.currentWaypointIndex++;
-      wp = agent.waypoints[agent.currentWaypointIndex];
-    }
-
-    targetX = wp.x;
-    targetY = wp.y;
-    tau = 0.35; // High target-drive fidelity for S-curve lane navigation
-
-    // Active Waypoint Traversal: 18px waypoint radius with instant progression
-    const distToWp = Math.hypot(agent.x - wp.x, agent.y - wp.y);
-    if (distToWp < 18.0) {
-      agent.currentWaypointIndex++;
-      if (agent.currentWaypointIndex < agent.waypoints.length) {
-        const nextWp = agent.waypoints[agent.currentWaypointIndex];
-        targetX = nextWp.x;
-        targetY = nextWp.y;
-      } else {
-        targetX = agent.targetX;
-        targetY = agent.targetY;
-      }
-    }
-  }
-
-  // Immediate Forward Drive on Spawn & Automated De-clogging Impulse
-  const isInsideBooth = agent.stage === 3 && agent.assignedCounterId !== null;
-  if (!isInsideBooth && !agent.isCleared && !agent.isClearedConcourse) {
-    // Immediate forward drive if near bottom spawn area
-    if (agent.y > 460 && agent.vy > -10) {
-      agent.vy = -18 - Math.random() * 4;
-    }
-
-    // Automated De-clogging Impulse: if speed^2 < 4 for > 40 frames (~0.65s) outside booth
-    const speedSq = agent.vx * agent.vx + agent.vy * agent.vy;
-    if (speedSq < 4.0) {
-      agent.stuckTime += dt;
-      if (agent.stuckTime > 0.65) {
-        agent.vy = -28;
-        agent.vx += (Math.random() - 0.5) * 12;
-        agent.stuckTime = 0;
+      // Active Waypoint Traversal: 22px waypoint radius with progression
+      const distToWp = Math.hypot(agent.x - wp.x, agent.y - wp.y);
+      if (distToWp < 22.0) {
+        agent.currentWaypointIndex++;
+        if (agent.currentWaypointIndex < agent.waypoints.length) {
+          const nextWp = agent.waypoints[agent.currentWaypointIndex];
+          targetX = nextWp.x;
+          targetY = nextWp.y;
+          agent.targetX = nextWp.x;
+          agent.targetY = nextWp.y;
+        }
       }
     } else {
-      agent.stuckTime = Math.max(0, agent.stuckTime - dt * 2.0);
+      // Reached final destination (inner turnstiles or grandstand): persist final waypoint forward
+      const lastWp = agent.waypoints[agent.waypoints.length - 1];
+      targetX = lastWp.x;
+      targetY = lastWp.y;
+      agent.targetX = lastWp.x;
+      agent.targetY = lastWp.y;
+      tau = 0.35;
     }
   }
 
-  // 1. Target Attraction / Corridor Flow Field Driving Force
+  // 1. Target Attraction Driving Force: f_0 = (v0 * e_target - v) / tau [Helbing et al. 2000, Eq. (1)]
   const dx = targetX - agent.x;
   const dy = targetY - agent.y;
   const distToTarget = Math.hypot(dx, dy);
@@ -134,44 +119,7 @@ export function updateAgentPhysics(
   let vDesiredX = 0;
   let vDesiredY = 0;
 
-  // Lane-Aware Guided Dynamics: When inside S-queue corridor, enforce lane dominant flow vector
-  const isGate1Agent = agent.assignedGateId === 'gate-1' || agent.assignedGateId === 'gate1';
-  const inSCorridorBounds =
-    sQueueEnabled &&
-    isGate1Agent &&
-    !agent.isClearedConcourse &&
-    agent.x >= 220 &&
-    agent.x <= 510 &&
-    agent.y >= 125 &&
-    agent.y <= 295;
-
-  if (inSCorridorBounds) {
-    // Zero out vertical target pull into horizontal barrier walls
-    if (agent.y >= 250 && agent.y <= 290 && agent.x < 465) {
-      // Lane 1 (Bottom): WEST to EAST (+X)
-      vDesiredX = desiredSpeedPx;
-      vDesiredY = (270 - agent.y) * 1.8; // Centering along Lane 1 centerline
-    } else if (agent.x >= 465 && agent.y >= 205 && agent.y <= 275) {
-      // U-Turn 1: Turn smoothly around right bend up into Lane 2
-      vDesiredX = (485 - agent.x) * 1.5;
-      vDesiredY = -desiredSpeedPx;
-    } else if (agent.y >= 190 && agent.y <= 230 && agent.x > 265) {
-      // Lane 2 (Middle): EAST to WEST (-X)
-      vDesiredX = -desiredSpeedPx;
-      vDesiredY = (210 - agent.y) * 1.8; // Centering along Lane 2 centerline
-    } else if (agent.x <= 265 && agent.y >= 145 && agent.y <= 215) {
-      // U-Turn 2: Turn smoothly around left bend up into Lane 3
-      vDesiredX = (245 - agent.x) * 1.5;
-      vDesiredY = -desiredSpeedPx;
-    } else if (agent.y >= 130 && agent.y <= 170) {
-      // Lane 3 (Top): WEST to EAST (+X) leading directly to Fast-Scan bar
-      vDesiredX = desiredSpeedPx;
-      vDesiredY = (150 - agent.y) * 1.8; // Centering along Lane 3 centerline
-    } else if (distToTarget > 1.0) {
-      vDesiredX = desiredSpeedPx * (dx / distToTarget);
-      vDesiredY = desiredSpeedPx * (dy / distToTarget);
-    }
-  } else if (distToTarget > 1.0) {
+  if (distToTarget > 1.0) {
     vDesiredX = desiredSpeedPx * (dx / distToTarget);
     vDesiredY = desiredSpeedPx * (dy / distToTarget);
   }
@@ -248,26 +196,7 @@ export function updateAgentPhysics(
     agent.vy *= Math.max(0.03, viscosityDecay);
   }
 
-  // 6. Max Speed Clamp & Unconditional Forward Flow Field (Inflow Suction)
-  if (agent.y > 80 && !isInsideBooth && !agent.isCleared && !agent.isClearedConcourse) {
-    // Clamp minimum forward velocity component so agents never stop when heading towards target
-    if (agent.vy > -12 && targetY < agent.y) {
-      agent.vy = -18;
-    }
-
-    if (agent.y > 280) {
-      const minForwardVy = -baseSpeed * 22; // ~ -28.6 px/s
-      agent.vy = Math.min(agent.vy, minForwardVy);
-    }
-
-    // Queue Ingress Corridor Suction Field in funnel entrance
-    if (agent.y <= 360 && agent.y >= 250 && Math.abs(agent.x - 260) < 80) {
-      const suctionX = (260 - agent.x) * 1.8;
-      agent.vx += suctionX * dt;
-      agent.vy -= 15 * dt;
-    }
-  }
-
+  // 6. Max Speed Clamp: 1.5 * v0 for numerical stability [Helbing, Farkas, Vicsek 2000]
   const currentSpeed = Math.hypot(agent.vx, agent.vy);
   const maxAllowedSpeed = desiredSpeedPx * 1.55;
   if (currentSpeed > maxAllowedSpeed) {
@@ -344,15 +273,15 @@ export function calculateCrowdInteractions(
     const localDensity = (neighbors.length + 1) / discAreaM2;
     agent.density = localDensity;
 
-    // Dynamic Color Mapping based on Fruin Level of Service (LOS)
-    if (localDensity < 2.5) {
-      agent.color = '#10b981'; // Green
+    // Dynamic Color Mapping based on Fruin Level of Service (LOS) & Evaluation Criteria
+    if (localDensity < 1.5) {
+      agent.color = '#38bdf8'; // Cyan/Blue: Free Flow (<1.5 p/m²)
+    } else if (localDensity < 2.8) {
+      agent.color = '#10b981'; // Green: Laminar Ingress (1.5 - 2.8 p/m²)
     } else if (localDensity < 4.5) {
-      agent.color = '#f59e0b'; // Amber
-    } else if (localDensity < 5.0) {
-      agent.color = '#f97316'; // Orange-Coral
+      agent.color = '#f59e0b'; // Amber: Viscous Delay (2.8 - 4.5 p/m²)
     } else {
-      // Flashing / Glowing Rose Red
+      // Radiant Pulsing Red: Compressive Shockwave Hazard (≥4.5 p/m²)
       agent.color = isFlashTick ? '#f43f5e' : '#fda4af';
     }
 
@@ -386,24 +315,43 @@ export function calculateCrowdInteractions(
         const nx = dx / dist;
         const ny = dy / dist;
 
-        // Reduce inter-agent backward repulsion: when force vector points opposite
-        // to agent's desired forward direction, scale down by 0.15x
-        const forceDotTarget = nx * targetDirX + ny * targetDirY;
-        const pushScale = forceDotTarget < 0 ? 0.15 : 1.0;
-
-        // Exponential social pushback
+        // Exponential social repulsion force [Helbing, Farkas, Vicsek 2000, Eq. (2)]
         const A_social = 280;
         const B_social = 6.0;
-        const fSocial = A_social * Math.exp((contactDist - dist) / B_social) * pushScale;
+        const fSocial = A_social * Math.exp((contactDist - dist) / B_social);
 
         agent.vx += fSocial * nx * dt;
         agent.vy += fSocial * ny * dt;
 
-        // Physical elastic contact force when bodies touch
+        // Counter-Flow Shockwave Physics (People Pushing Backward)
+        // When an oncoming agent collides head-on with forward-moving pedestrians (v1 · v2 < -0.5),
+        // exponentially amplify lateral evasion friction and velocity reduction, dropping throughput by 35-50%
+        const spd1 = Math.hypot(agent.vx, agent.vy) || 0.001;
+        const spd2 = Math.hypot(other.vx, other.vy) || 0.001;
+        const headOnDot = (agent.vx * other.vx + agent.vy * other.vy) / (spd1 * spd2);
+        const isCounterFlowConflict =
+          headOnDot < -0.4 ||
+          Boolean(agent.isReverse) !== Boolean(other.isReverse) ||
+          Boolean(agent.isRejected) !== Boolean(other.isRejected);
+
+        if (isCounterFlowConflict) {
+          const evasionFactor = Math.exp(Math.min(2.0, Math.abs(headOnDot)) * 1.5);
+          const latX = -ny;
+          const latY = nx;
+          const latPush = 380 * evasionFactor * dt;
+          agent.vx += latX * latPush;
+          agent.vy += latY * latPush;
+
+          // Strong velocity dissipation & shear deceleration
+          agent.vx *= 0.88;
+          agent.vy *= 0.88;
+        }
+
+        // Physical elastic contact force when bodies touch [Helbing et al. 2000, Eq. (3)]
         if (dist < contactDist) {
           const overlap = contactDist - dist;
           const k_body = 1200;
-          const fElastic = k_body * overlap * pushScale;
+          const fElastic = k_body * overlap;
 
           agent.vx += fElastic * nx * dt;
           agent.vy += fElastic * ny * dt;

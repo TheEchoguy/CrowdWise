@@ -1,12 +1,13 @@
 import React, { Component, ErrorInfo, ReactNode } from 'react';
 import { Header } from './components/layout/Header';
 import { LeftControls } from './components/layout/LeftControls';
-import { StadiumControls } from './components/layout/StadiumControls';
-import { GateControls } from './components/layout/GateControls';
 import { RightTelemetry } from './components/layout/RightTelemetry';
 import { SimulationCanvas } from './components/canvas/SimulationCanvas';
 import { DecisionModal } from './components/layout/DecisionModal';
+import { BenchmarkModal } from './components/layout/BenchmarkModal';
 import { useSimulationStore } from './state/useSimulationStore';
+import { KSCA_STADIUM_SECTORS } from './engine/ChinnaswamyData';
+import { StadiumBlueprint } from './stadium/components/StadiumBlueprint';
 
 interface ErrorBoundaryProps {
   children: ReactNode;
@@ -56,32 +57,37 @@ class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
 }
 
 export const App: React.FC = () => {
-  const scenario = useSimulationStore((s) => s.scenario);
-  const stadiumViewMode = useSimulationStore((s) => s.stadiumViewMode);
-  const viewMode = useSimulationStore((s) => s.viewMode);
+  const appMode = useSimulationStore((s) => s.appMode);
+  const setAppMode = useSimulationStore((s) => s.setAppMode);
+  const currentView = useSimulationStore((s) => s.currentView);
+  const selectedSector = (useSimulationStore((s) => s.selectedRoadSector) ||
+    useSimulationStore((s) => s.selectedSector) ||
+    'LINK_ROAD') as keyof typeof KSCA_STADIUM_SECTORS;
+  const isBenchmarkOpen = useSimulationStore((s) => s.isBenchmarkOpen);
+  const toggleBenchmark = useSimulationStore((s) => s.toggleBenchmark);
 
-  const scenarioTitles: Record<string, { title: string; subtitle: string }> = {
-    stadium: {
-      title:
-        stadiumViewMode === 'MACRO_VIEW'
-          ? 'M. Chinnaswamy Stadium — 35,000 Capacity Radar Digital Twin'
-          : 'M. Chinnaswamy Stadium — East Stand Gates 1–6 Vector Concourse',
-      subtitle:
-        stadiumViewMode === 'MACRO_VIEW'
-          ? '21 Perimeter Gates, Central Cricket Pitch & Grandstand Seating Blocks'
-          : 'MG Road Metro Feed, 18m Ingress Boulevard, 40m Zigzag Baffles & Gates 4–6 Bypass'
-    },
-    bridge: {
-      title: 'Transit Footbridge Counter-Flow Simulator',
-      subtitle: 'High-Density Bidirectional Skywalk & Central Anti-Deadlock Lane Divider'
-    },
-    reversal: {
-      title: 'Sudden Shock Reversal & Egress Safety Lab',
-      subtitle: 'Emergency Reverse Flow & Compressive Shockwave Wavefront Study'
-    }
-  };
+  const activeSectorData = KSCA_STADIUM_SECTORS[selectedSector] || KSCA_STADIUM_SECTORS.LINK_ROAD;
 
-  const currentInfo = scenarioTitles[scenario] || scenarioTitles.stadium;
+  // Render Phase 1 Dedicated Authentic Stadium Blueprint
+  if (appMode === 'BLUEPRINT') {
+    return (
+      <ErrorBoundary fallbackTitle="Stadium Blueprint Error">
+        <StadiumBlueprint onSwitchToSimulation={() => setAppMode('SIMULATION')} />
+        <DecisionModal />
+        <BenchmarkModal isOpen={isBenchmarkOpen} onClose={toggleBenchmark} />
+      </ErrorBoundary>
+    );
+  }
+
+  const currentTitle =
+    currentView === 'MACRO_STADIUM'
+      ? 'M. Chinnaswamy Stadium — 35,000 Capacity Satellite Digital Twin'
+      : `M. Chinnaswamy Stadium — ${activeSectorData.name}`;
+
+  const currentSubtitle =
+    currentView === 'MACRO_STADIUM'
+      ? '23 Perimeter Gates, Central Cricket Pitch, 4 Arterial Roads & Grandstand Seating Blocks'
+      : `${activeSectorData.roadLabel} ──► Outer Frisking (E) & Inner Turnstile Banks (G)`;
 
   return (
     <div className="flex flex-col h-screen w-screen bg-[#080c14] text-slate-100 overflow-hidden font-sans select-none">
@@ -93,11 +99,7 @@ export const App: React.FC = () => {
         {/* Left Column: Simulation Control Station (3 Cols) */}
         <section className="lg:col-span-3 h-full min-h-0 overflow-hidden flex flex-col">
           <ErrorBoundary fallbackTitle="Controls Station Error">
-            {scenario === 'stadium' ? (
-              viewMode === 'stadium' ? <StadiumControls /> : <GateControls />
-            ) : (
-              <LeftControls />
-            )}
+            <LeftControls />
           </ErrorBoundary>
         </section>
 
@@ -107,10 +109,10 @@ export const App: React.FC = () => {
           <div className="flex items-center justify-between px-3 py-1.5 rounded-lg bg-slate-900/80 border border-slate-800 shrink-0">
             <div>
               <h2 className="text-xs font-bold text-slate-200 tracking-wide">
-                {currentInfo.title}
+                {currentTitle}
               </h2>
               <p className="text-[10px] text-slate-400">
-                {currentInfo.subtitle}
+                {currentSubtitle}
               </p>
             </div>
             <div className="flex items-center gap-2">
@@ -136,8 +138,9 @@ export const App: React.FC = () => {
         </section>
       </main>
 
-      {/* 3. Event Safety Decision Modal */}
+      {/* 3. Event Safety Decision Modal & Performance Benchmark Modal */}
       <DecisionModal />
+      <BenchmarkModal isOpen={isBenchmarkOpen} onClose={toggleBenchmark} />
     </div>
   );
 };
