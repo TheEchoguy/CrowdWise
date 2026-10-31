@@ -497,6 +497,17 @@ export class CanvasRenderer {
       const a = agents[i];
       if (a.state === 'ADMITTED' || a.state === 'INSIDE') continue;
 
+      // Draw subtle halo for redirected pedestrians
+      if (a.isRerouted) {
+        ctx.save();
+        ctx.strokeStyle = 'rgba(56, 189, 248, 0.85)';
+        ctx.lineWidth = 0.16;
+        ctx.beginPath();
+        ctx.arc(a.x, a.y, a.radius + 0.16, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.restore();
+      }
+
       if (detailLevel === 'SIMPLIFIED' || this.transform.scale < 2.0) {
         // Simplified top-down pedestrian dot
         ctx.fillStyle = a.shirtColor;
@@ -587,15 +598,32 @@ export class CanvasRenderer {
     ctx.save();
     for (const g of venue.gates) {
       const isSelected = selectedGateId === g.id;
+      const isClosedOrOffline =
+        g.direction === 'CLOSED' ||
+        g.status === 'TEMPORARILY_CLOSED' ||
+        g.status === 'UNAVAILABLE' ||
+        g.operationalScanners === 0;
 
       // Gate pin
       let statusColor = '#10B981';
-      if (g.status === 'TEMPORARILY_CLOSED' || g.status === 'UNAVAILABLE') {
+      if (isClosedOrOffline) {
         statusColor = '#EF4444';
-      } else if (g.status === 'SCANNER_FAILURE' || g.status === 'HIGH_CONGESTION') {
+      } else if (g.status === 'SCANNER_FAILURE' || g.warningLevel === 'HIGH' || g.operationalScanners < g.scannerCount) {
         statusColor = '#F59E0B';
       } else if (g.status === 'BUSY') {
         statusColor = '#3B82F6';
+      }
+
+      // If closed/offline, draw warning dashed perimeter circle
+      if (isClosedOrOffline) {
+        ctx.save();
+        ctx.strokeStyle = 'rgba(239, 68, 68, 0.8)';
+        ctx.lineWidth = 0.8;
+        ctx.setLineDash([1.5, 1.5]);
+        ctx.beginPath();
+        ctx.arc(g.position.x, g.position.y, 4.5, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.restore();
       }
 
       ctx.fillStyle = statusColor;
@@ -613,17 +641,131 @@ export class CanvasRenderer {
       ctx.textAlign = 'center';
       ctx.fillText(g.name, g.position.x, g.position.y - 3.2);
 
-      const admitted = g.admittedCount || g.totalProcessedCount || 0;
-      if (admitted > 0) {
-        ctx.fillStyle = '#10B981';
-        ctx.font = 'bold 2.0px monospace';
-        ctx.fillText(`✓ ${admitted.toLocaleString()} in`, g.position.x, g.position.y + 4.2);
+      // Independent Gate Spawn Origin Indicator
+      if (g.spawnPosition && g.direction !== 'EXIT' && g.gateType !== 'EXIT_ONLY') {
+        const sp = g.spawnPosition;
+        ctx.save();
+        ctx.strokeStyle = isSelected ? 'rgba(34, 211, 238, 0.7)' : 'rgba(56, 189, 248, 0.45)';
+        ctx.fillStyle = 'rgba(56, 189, 248, 0.15)';
+        ctx.lineWidth = 0.6;
+        ctx.setLineDash([1.0, 1.0]);
+        ctx.beginPath();
+        ctx.arc(sp.x, sp.y, 2.2, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.stroke();
+
+        ctx.fillStyle = isSelected ? '#22D3EE' : '#38BDF8';
+        ctx.beginPath();
+        ctx.arc(sp.x, sp.y, 0.7, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Directional trajectory line to gate
+        ctx.strokeStyle = 'rgba(56, 189, 248, 0.3)';
+        ctx.lineWidth = 0.5;
+        ctx.beginPath();
+        ctx.moveTo(sp.x, sp.y);
+        ctx.lineTo(g.position.x, g.position.y);
+        ctx.stroke();
+
+        ctx.fillStyle = '#7DD3FC';
+        ctx.font = '1.5px monospace';
+        ctx.textAlign = 'center';
+        ctx.fillText(`Arrival: ${g.name}`, sp.x, sp.y - 2.8);
+        ctx.restore();
       }
 
-      if (g.currentQueue > 0) {
+      // Dedicated Holding Pen Box
+      if (g.holdingAreaPosition) {
+        const hp = g.holdingAreaPosition;
+        const hw = 10;
+        const hh = 7;
+        ctx.save();
+        ctx.strokeStyle =
+          g.operationalControlState === 'CONGESTED' || g.operationalControlState === 'ADMISSION_PAUSED'
+            ? 'rgba(239, 68, 68, 0.6)'
+            : (g.inHoldingCount && g.inHoldingCount > 0)
+              ? 'rgba(245, 158, 11, 0.5)'
+              : 'rgba(56, 189, 248, 0.25)';
+        ctx.lineWidth = 0.5;
+        ctx.setLineDash([1.0, 1.0]);
+        ctx.strokeRect(hp.x - hw / 2, hp.y - hh / 2, hw, hh);
+
+        ctx.fillStyle = (g.inHoldingCount && g.inHoldingCount > 0) ? '#F59E0B' : 'rgba(148, 163, 184, 0.6)';
+        ctx.font = '1.7px monospace';
+        ctx.textAlign = 'center';
+        ctx.fillText(`Hold: ${g.inHoldingCount || 0}/${g.holdingAreaCapacity || 500}`, hp.x, hp.y + hh / 2 + 2.0);
+        ctx.restore();
+      }
+
+      // Draw Scanner Counter Indicator Lights (3 lights)
+      if (g.counters && g.counters.length > 0) {
+        const totalCounters = g.counters.length;
+        const dotSpacing = 1.6;
+        const startX = g.position.x - ((totalCounters - 1) * dotSpacing) / 2;
+        const dotY = g.position.y + 3.0;
+
+        for (let cIdx = 0; cIdx < totalCounters; cIdx++) {
+          const counter = g.counters[cIdx];
+          const cX = startX + cIdx * dotSpacing;
+          ctx.fillStyle = counter.status === 'OPERATIONAL' ? '#10B981' : '#EF4444';
+          ctx.beginPath();
+          ctx.arc(cX, dotY, 0.65, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.strokeStyle = '#0F172A';
+          ctx.lineWidth = 0.2;
+          ctx.stroke();
+        }
+      }
+
+      let subY = g.position.y + 5.2;
+
+      // Operational state pill
+      if (g.operationalControlState && g.operationalControlState !== 'NORMAL') {
+        ctx.fillStyle =
+          g.operationalControlState === 'CONGESTED' || g.operationalControlState === 'ADMISSION_PAUSED'
+            ? '#EF4444'
+            : g.operationalControlState === 'ADMISSION_METERING'
+              ? '#38BDF8'
+              : '#F59E0B';
+        ctx.font = 'bold 1.8px monospace';
+        ctx.fillText(`[${g.operationalControlState}]`, g.position.x, subY);
+        subY += 2.4;
+      }
+
+      // If closed or offline, display CLOSED / REROUTING warning tag
+      if (isClosedOrOffline) {
         ctx.fillStyle = '#EF4444';
-        ctx.font = 'bold 2.2px monospace';
-        ctx.fillText(`Q: ${g.currentQueue}`, g.position.x, g.position.y + (admitted > 0 ? 6.8 : 4.2));
+        ctx.font = 'bold 2.1px monospace';
+        ctx.fillText('CLOSED - REROUTING', g.position.x, subY);
+        subY += 2.6;
+
+        if (g.deflectedCount && g.deflectedCount > 0) {
+          ctx.fillStyle = '#F87171';
+          ctx.font = 'bold 1.9px monospace';
+          ctx.fillText(`⮡ ${g.deflectedCount} diverted`, g.position.x, subY);
+          subY += 2.4;
+        }
+      } else {
+        const admitted = g.admittedCount || g.totalProcessedCount || 0;
+        if (admitted > 0) {
+          ctx.fillStyle = '#10B981';
+          ctx.font = 'bold 2.0px monospace';
+          ctx.fillText(`✓ ${admitted.toLocaleString()} in`, g.position.x, subY);
+          subY += 2.6;
+        }
+
+        if (g.redirectedCount && g.redirectedCount > 0) {
+          ctx.fillStyle = '#38BDF8';
+          ctx.font = 'bold 1.9px monospace';
+          ctx.fillText(`+${g.redirectedCount} rerouted`, g.position.x, subY);
+          subY += 2.4;
+        }
+
+        if (g.currentQueue > 0) {
+          ctx.fillStyle = '#EF4444';
+          ctx.font = 'bold 2.2px monospace';
+          ctx.fillText(`Q: ${g.currentQueue}`, g.position.x, subY);
+        }
       }
     }
     ctx.restore();
@@ -914,6 +1056,41 @@ export class CanvasRenderer {
     ctx.restore();
   }
 
+  private drawDirectionalArrow(
+    ctx: CanvasRenderingContext2D,
+    fromX: number,
+    fromY: number,
+    toX: number,
+    toY: number,
+    color: string,
+    width = 1.0,
+    headSize = 1.6
+  ): void {
+    const dx = toX - fromX;
+    const dy = toY - fromY;
+    const len = Math.sqrt(dx * dx + dy * dy);
+    if (len < 0.1) return;
+    const angle = Math.atan2(dy, dx);
+
+    ctx.save();
+    ctx.strokeStyle = color;
+    ctx.fillStyle = color;
+    ctx.lineWidth = width;
+
+    ctx.beginPath();
+    ctx.moveTo(fromX, fromY);
+    ctx.lineTo(toX, toY);
+    ctx.stroke();
+
+    ctx.beginPath();
+    ctx.moveTo(toX, toY);
+    ctx.lineTo(toX - headSize * Math.cos(angle - Math.PI / 6), toY - headSize * Math.sin(angle - Math.PI / 6));
+    ctx.lineTo(toX - headSize * Math.cos(angle + Math.PI / 6), toY - headSize * Math.sin(angle + Math.PI / 6));
+    ctx.closePath();
+    ctx.fill();
+    ctx.restore();
+  }
+
   private drawFocusedGateSideView(
     venue: Venue,
     ctx: CanvasRenderingContext2D,
@@ -936,49 +1113,145 @@ export class CanvasRenderer {
       const tx = -ny;
       const ty = nx;
 
-      const penLength = 22; // meters back for designated queue pen
-      const penWidth = g.width + 4;
+      const penWidth = g.width + 5;
+      const totalLanes = Math.max(1, g.counters?.length || g.scannerCount || 3);
 
-      // 1. Designated Queue Pen Boundary
+      // ========================================================
+      // 1. EXTERNAL PEDESTRIAN ARRIVAL AREA (+26m to +38m)
+      // ========================================================
       ctx.save();
-      ctx.strokeStyle = g.warningLevel === 'CRITICAL' ? '#EF4444' : g.warningLevel === 'HIGH' ? '#F59E0B' : '#06B6D4';
-      ctx.fillStyle = 'rgba(6, 182, 212, 0.06)';
-      ctx.lineWidth = 1.5;
-      ctx.setLineDash([2, 2]);
+      const arrW = penWidth + 8;
+      const arrStart = 26;
+      const arrEnd = 38;
+      const a1 = { x: g.position.x - tx * (arrW / 2) + nx * arrStart, y: g.position.y - ty * (arrW / 2) + ny * arrStart };
+      const a2 = { x: g.position.x + tx * (arrW / 2) + nx * arrStart, y: g.position.y + ty * (arrW / 2) + ny * arrStart };
+      const a3 = { x: a2.x + nx * (arrEnd - arrStart), y: a2.y + ny * (arrEnd - arrStart) };
+      const a4 = { x: a1.x + nx * (arrEnd - arrStart), y: a1.y + ny * (arrEnd - arrStart) };
 
-      const p1 = { x: g.position.x - tx * (penWidth / 2), y: g.position.y - ty * (penWidth / 2) };
-      const p2 = { x: g.position.x + tx * (penWidth / 2), y: g.position.y + ty * (penWidth / 2) };
-      const p3 = { x: p2.x + nx * penLength, y: p2.y + ny * penLength };
-      const p4 = { x: p1.x + nx * penLength, y: p1.y + ny * penLength };
-
+      ctx.fillStyle = 'rgba(14, 165, 233, 0.04)';
+      ctx.strokeStyle = 'rgba(56, 189, 248, 0.35)';
+      ctx.lineWidth = 1.0;
+      ctx.setLineDash([3, 2]);
       ctx.beginPath();
-      ctx.moveTo(p1.x, p1.y);
-      ctx.lineTo(p2.x, p2.y);
-      ctx.lineTo(p3.x, p3.y);
-      ctx.lineTo(p4.x, p4.y);
+      ctx.moveTo(a1.x, a1.y);
+      ctx.lineTo(a2.x, a2.y);
+      ctx.lineTo(a3.x, a3.y);
+      ctx.lineTo(a4.x, a4.y);
       ctx.closePath();
       ctx.fill();
       ctx.stroke();
 
-      // Pen Label
-      ctx.fillStyle = '#67E8F9';
-      ctx.font = 'bold 2.4px Inter, sans-serif';
+      ctx.fillStyle = '#38BDF8';
+      ctx.font = 'bold 2.0px Inter, sans-serif';
       ctx.textAlign = 'center';
-      const labelPos = { x: g.position.x + nx * (penLength + 2.5), y: g.position.y + ny * (penLength + 2.5) };
-      ctx.fillText(`${g.name} Queue Pen (Cap: ${g.queueAreaCapacity || 80} ppl)`, labelPos.x, labelPos.y);
+      const arrLabelPos = { x: g.position.x + nx * (arrEnd + 1.8), y: g.position.y + ny * (arrEnd + 1.8) };
+      ctx.fillText(`1. External Arrival Plaza (${g.arrivalRatePerMin ?? 120} ppl/min inflow)`, arrLabelPos.x, arrLabelPos.y);
 
-      // 2. Queue Spillback Hazard Area (when currentQueue > queueAreaCapacity)
+      // Inflow directional arrow from plaza toward gate
+      this.drawDirectionalArrow(
+        ctx,
+        g.position.x + nx * 34,
+        g.position.y + ny * 34,
+        g.position.x + nx * 27,
+        g.position.y + ny * 27,
+        'rgba(56, 189, 248, 0.7)',
+        1.2,
+        1.8
+      );
+      ctx.restore();
+
+      // ========================================================
+      // 2. GATE APPROACH PATH (+19m to +26m)
+      // ========================================================
+      ctx.save();
+      const appW = penWidth + 2;
+      const app1 = { x: g.position.x - tx * (appW / 2) + nx * 19, y: g.position.y - ty * (appW / 2) + ny * 19 };
+      const app2 = { x: g.position.x + tx * (appW / 2) + nx * 19, y: g.position.y + ty * (appW / 2) + ny * 19 };
+      const app3 = { x: g.position.x + tx * (appW / 2) + nx * 26, y: g.position.y + ty * (appW / 2) + ny * 26 };
+      const app4 = { x: g.position.x - tx * (appW / 2) + nx * 26, y: g.position.y - ty * (appW / 2) + ny * 26 };
+
+      ctx.fillStyle = 'rgba(30, 41, 59, 0.35)';
+      ctx.strokeStyle = 'rgba(100, 116, 139, 0.4)';
+      ctx.lineWidth = 0.8;
+      ctx.setLineDash([1, 1]);
+      ctx.beginPath();
+      ctx.moveTo(app1.x, app1.y);
+      ctx.lineTo(app2.x, app2.y);
+      ctx.lineTo(app3.x, app3.y);
+      ctx.lineTo(app4.x, app4.y);
+      ctx.closePath();
+      ctx.fill();
+      ctx.stroke();
+
+      ctx.fillStyle = '#94A3B8';
+      ctx.font = '1.6px Inter, sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText('2. Gate Approach Corridor', g.position.x + nx * 22.5 + tx * (appW / 2 + 3.2), g.position.y + ny * 22.5 + ty * (appW / 2 + 3.2));
+      ctx.restore();
+
+      // ========================================================
+      // 3. CROWD WAITING & HOLDING AREA (+14m to +22m lateral offset)
+      // ========================================================
+      if (g.holdingAreaPosition) {
+        ctx.save();
+        const hp = g.holdingAreaPosition;
+        ctx.strokeStyle = g.inHoldingCount && g.inHoldingCount > 0 ? '#C084FC' : 'rgba(192, 132, 252, 0.4)';
+        ctx.fillStyle = g.inHoldingCount && g.inHoldingCount > 0 ? 'rgba(192, 132, 252, 0.12)' : 'rgba(192, 132, 252, 0.04)';
+        ctx.lineWidth = 1.2;
+        ctx.setLineDash([2, 2]);
+        ctx.beginPath();
+        ctx.arc(hp.x, hp.y, 6.5, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.stroke();
+
+        ctx.fillStyle = '#E9D5FF';
+        ctx.font = 'bold 1.7px Inter, sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillText(`3. Holding Area (${g.inHoldingCount || 0}/${g.holdingAreaCapacity || 500} ppl)`, hp.x, hp.y - 7.2);
+        ctx.restore();
+      }
+
+      // ========================================================
+      // 4. MAIN QUEUE CORRAL (+11m to +19m)
+      // ========================================================
+      ctx.save();
+      const qW = penWidth;
+      const q1 = { x: g.position.x - tx * (qW / 2) + nx * 11, y: g.position.y - ty * (qW / 2) + ny * 11 };
+      const q2 = { x: g.position.x + tx * (qW / 2) + nx * 11, y: g.position.y + ty * (qW / 2) + ny * 11 };
+      const q3 = { x: g.position.x + tx * (qW / 2) + nx * 19, y: g.position.y + ty * (qW / 2) + ny * 19 };
+      const q4 = { x: g.position.x - tx * (qW / 2) + nx * 19, y: g.position.y - ty * (qW / 2) + ny * 19 };
+
+      ctx.fillStyle = 'rgba(6, 182, 212, 0.05)';
+      ctx.strokeStyle = g.warningLevel === 'CRITICAL' ? '#EF4444' : g.warningLevel === 'HIGH' ? '#F59E0B' : '#06B6D4';
+      ctx.lineWidth = 1.2;
+      ctx.setLineDash([2, 2]);
+      ctx.beginPath();
+      ctx.moveTo(q1.x, q1.y);
+      ctx.lineTo(q2.x, q2.y);
+      ctx.lineTo(q3.x, q3.y);
+      ctx.lineTo(q4.x, q4.y);
+      ctx.closePath();
+      ctx.fill();
+      ctx.stroke();
+
+      ctx.fillStyle = '#67E8F9';
+      ctx.font = 'bold 1.9px Inter, sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText(`4. Main Queue Corral (${g.waitingInQueueCount || g.currentQueue || 0} waiting)`, g.position.x + nx * 15, g.position.y + ny * 15 - 3.5);
+      ctx.restore();
+
+      // Spillback hazard area if queue over capacity
       if (g.spillbackCount && g.spillbackCount > 0) {
-        const spillLen = Math.min(30, g.spillbackCount * 0.35);
-        const s3 = { x: p2.x + nx * (penLength + spillLen), y: p2.y + ny * (penLength + spillLen) };
-        const s4 = { x: p1.x + nx * (penLength + spillLen), y: p1.y + ny * (penLength + spillLen) };
-
+        ctx.save();
+        const spillLen = Math.min(25, g.spillbackCount * 0.35);
+        const s3 = { x: q3.x + nx * spillLen, y: q3.y + ny * spillLen };
+        const s4 = { x: q4.x + nx * spillLen, y: q4.y + ny * spillLen };
         ctx.fillStyle = 'rgba(239, 68, 68, 0.22)';
         ctx.strokeStyle = '#EF4444';
-        ctx.lineWidth = 1.8;
+        ctx.lineWidth = 1.5;
         ctx.beginPath();
-        ctx.moveTo(p4.x, p4.y);
-        ctx.lineTo(p3.x, p3.y);
+        ctx.moveTo(q4.x, q4.y);
+        ctx.lineTo(q3.x, q3.y);
         ctx.lineTo(s3.x, s3.y);
         ctx.lineTo(s4.x, s4.y);
         ctx.closePath();
@@ -986,55 +1259,279 @@ export class CanvasRenderer {
         ctx.stroke();
 
         ctx.fillStyle = '#FCA5A5';
-        ctx.font = 'bold 2.3px Inter, sans-serif';
-        ctx.fillText(`⚠ SPILLBACK OVERFLOW: +${g.spillbackCount} PPL IN APPROACH PLAZA`, labelPos.x + nx * 5, labelPos.y + ny * 5);
-      }
-
-      // 3. Processing Lanes, Counter Desks & LED Lights
-      const lanes = Math.max(1, g.scannerCount);
-      for (let l = 0; l < lanes; l++) {
-        const offsetT = ((l - (lanes - 1) / 2) / lanes) * (g.width * 0.75);
-        const laneCenterX = g.position.x + tx * offsetT;
-        const laneCenterY = g.position.y + ty * offsetT;
-
-        // Lane divider ropes / stanchions extending back 16m
-        ctx.strokeStyle = 'rgba(100, 116, 139, 0.4)';
-        ctx.lineWidth = 0.5;
-        ctx.setLineDash([1, 1]);
-        ctx.beginPath();
-        ctx.moveTo(laneCenterX, laneCenterY);
-        ctx.lineTo(laneCenterX + nx * 16, laneCenterY + ny * 16);
-        ctx.stroke();
-
-        // Counter Desk (physical desk block)
-        const isCounterActive =
-          l < g.operationalScanners && g.direction !== 'CLOSED' && g.status !== 'TEMPORARILY_CLOSED';
-        ctx.fillStyle = isCounterActive ? '#1E293B' : '#450A0A';
-        ctx.strokeStyle = isCounterActive ? '#38BDF8' : '#EF4444';
-        ctx.lineWidth = 0.8;
-        ctx.setLineDash([]);
-
-        ctx.beginPath();
-        ctx.arc(laneCenterX, laneCenterY, 1.0, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.stroke();
-
-        // Status LED light on desk
-        ctx.fillStyle = isCounterActive ? '#10B981' : '#EF4444';
-        ctx.beginPath();
-        ctx.arc(laneCenterX, laneCenterY, 0.4, 0, Math.PI * 2);
-        ctx.fill();
-
-        // Lane Number
-        ctx.fillStyle = '#FFFFFF';
-        ctx.font = 'bold 1.6px monospace';
+        ctx.font = 'bold 2.0px Inter, sans-serif';
         ctx.textAlign = 'center';
-        ctx.fillText(`L${l + 1}`, laneCenterX - nx * 1.5, laneCenterY - ny * 1.5);
+        ctx.fillText(`⚠ SPILLBACK OVERFLOW (+${g.spillbackCount} PPL)`, g.position.x + nx * (19 + spillLen / 2), g.position.y + ny * (19 + spillLen / 2));
+        ctx.restore();
       }
 
-      // 4. Downstream Corridor Connection into Concourse
+      // ========================================================
+      // 5. QUEUE DISTRIBUTION AREA / DECISION POINT (+7.5m to +11m)
+      // ========================================================
+      ctx.save();
+      const distW = penWidth;
+      const d1 = { x: g.position.x - tx * (distW / 2) + nx * 7.5, y: g.position.y - ty * (distW / 2) + ny * 7.5 };
+      const d2 = { x: g.position.x + tx * (distW / 2) + nx * 7.5, y: g.position.y + ty * (distW / 2) + ny * 7.5 };
+      const d3 = { x: g.position.x + tx * (distW / 2) + nx * 11, y: g.position.y + ty * (distW / 2) + ny * 11 };
+      const d4 = { x: g.position.x - tx * (distW / 2) + nx * 11, y: g.position.y - ty * (distW / 2) + ny * 11 };
+
+      ctx.fillStyle = 'rgba(245, 158, 11, 0.08)';
+      ctx.strokeStyle = '#F59E0B';
+      ctx.lineWidth = 1.0;
+      ctx.setLineDash([2, 1]);
+      ctx.beginPath();
+      ctx.moveTo(d1.x, d1.y);
+      ctx.lineTo(d2.x, d2.y);
+      ctx.lineTo(d3.x, d3.y);
+      ctx.lineTo(d4.x, d4.y);
+      ctx.closePath();
+      ctx.fill();
+      ctx.stroke();
+
+      // Floor Chevron Stripes in Distribution Area
+      ctx.strokeStyle = 'rgba(245, 158, 11, 0.3)';
+      ctx.lineWidth = 0.8;
+      ctx.setLineDash([]);
+      for (let chevronDist = 8.5; chevronDist <= 10.5; chevronDist += 1.0) {
+        const cMidX = g.position.x + nx * chevronDist;
+        const cMidY = g.position.y + ny * chevronDist;
+        ctx.beginPath();
+        ctx.moveTo(cMidX - tx * 2.5 + nx * 0.6, cMidY - ty * 2.5 + ny * 0.6);
+        ctx.lineTo(cMidX, cMidY - 0.2);
+        ctx.lineTo(cMidX + tx * 2.5 + nx * 0.6, cMidY + ty * 2.5 + ny * 0.6);
+        ctx.stroke();
+      }
+
+      ctx.fillStyle = '#FDE68A';
+      ctx.font = 'bold 1.7px Inter, sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText('5. Decision Point — Intelligent Lane Balancing', g.position.x + nx * 9.2, g.position.y + ny * 9.2 + 2.8);
+      ctx.restore();
+
+      // ========================================================
+      // 6. THREE PARALLEL SCANNER LANES (+1.8m to +7.5m)
+      // 7, 8, 9. COUNTER DESKS 1, 2, 3 (+0.8m to +1.6m)
+      // 10. TICKET VERIFICATION AREA (+0.6m to +2.0m)
+      // ========================================================
+      for (let l = 0; l < totalLanes; l++) {
+        const offsetT = ((l - (totalLanes - 1) / 2) / totalLanes) * (g.width * 0.75);
+        const laneX = g.position.x + tx * offsetT;
+        const laneY = g.position.y + ty * offsetT;
+
+        const counter = g.counters?.[l];
+        const isCounterActive = counter
+          ? counter.status === 'OPERATIONAL'
+          : (l < g.operationalScanners && g.direction !== 'CLOSED' && g.status !== 'TEMPORARILY_CLOSED');
+        const isProcessing = counter?.isProcessing;
+
+        // Lane Stanchion Ropes (Left and Right lane borders)
+        const laneWidth = (g.width * 0.75) / totalLanes;
+        const stanchionL = { x: laneX - tx * (laneWidth / 2), y: laneY - ty * (laneWidth / 2) };
+        const stanchionR = { x: laneX + tx * (laneWidth / 2), y: laneY + ty * (laneWidth / 2) };
+
+        ctx.save();
+        ctx.strokeStyle = isCounterActive ? 'rgba(56, 189, 248, 0.45)' : 'rgba(239, 68, 68, 0.35)';
+        ctx.lineWidth = 0.7;
+        ctx.setLineDash([1.5, 1.5]);
+
+        // Draw stanchion lane divider ropes
+        ctx.beginPath();
+        ctx.moveTo(stanchionL.x + nx * 1.8, stanchionL.y + ny * 1.8);
+        ctx.lineTo(stanchionL.x + nx * 7.5, stanchionL.y + ny * 7.5);
+        ctx.stroke();
+
+        ctx.beginPath();
+        ctx.moveTo(stanchionR.x + nx * 1.8, stanchionR.y + ny * 1.8);
+        ctx.lineTo(stanchionR.x + nx * 7.5, stanchionR.y + ny * 7.5);
+        ctx.stroke();
+
+        // Stanchion posts (small circles along rope)
+        for (let postDist = 2.0; postDist <= 7.5; postDist += 1.8) {
+          ctx.fillStyle = '#CBD5E1';
+          ctx.beginPath();
+          ctx.arc(stanchionL.x + nx * postDist, stanchionL.y + ny * postDist, 0.22, 0, Math.PI * 2);
+          ctx.arc(stanchionR.x + nx * postDist, stanchionR.y + ny * postDist, 0.22, 0, Math.PI * 2);
+          ctx.fill();
+        }
+
+        // Lane floor shading
+        ctx.fillStyle = isCounterActive
+          ? (isProcessing ? 'rgba(14, 165, 233, 0.08)' : 'rgba(30, 41, 59, 0.2)')
+          : 'rgba(239, 68, 68, 0.08)';
+        ctx.beginPath();
+        ctx.moveTo(stanchionL.x + nx * 1.8, stanchionL.y + ny * 1.8);
+        ctx.lineTo(stanchionR.x + nx * 1.8, stanchionR.y + ny * 1.8);
+        ctx.lineTo(stanchionR.x + nx * 7.5, stanchionR.y + ny * 7.5);
+        ctx.lineTo(stanchionL.x + nx * 7.5, stanchionL.y + ny * 7.5);
+        ctx.closePath();
+        ctx.fill();
+
+        // Lane Label: e.g. "Lane 1 — Counter 1"
+        ctx.fillStyle = isCounterActive ? '#E0F2FE' : '#FCA5A5';
+        ctx.font = 'bold 1.5px monospace';
+        ctx.textAlign = 'center';
+        ctx.fillText(`Lane ${l + 1} — Counter ${l + 1}`, laneX + nx * 6.8, laneY + ny * 6.8);
+
+        // Directional arrow inside each active lane pointing towards the counter
+        if (isCounterActive) {
+          this.drawDirectionalArrow(
+            ctx,
+            laneX + nx * 5.2,
+            laneY + ny * 5.2,
+            laneX + nx * 3.0,
+            laneY + ny * 3.0,
+            'rgba(56, 189, 248, 0.6)',
+            0.9,
+            1.2
+          );
+        }
+
+        // 10. TICKET VERIFICATION AREA (+0.6m to +2.0m)
+        const v1 = { x: stanchionL.x + nx * 0.6, y: stanchionL.y + ny * 0.6 };
+        const v2 = { x: stanchionR.x + nx * 0.6, y: stanchionR.y + ny * 0.6 };
+        const v3 = { x: stanchionR.x + nx * 2.0, y: stanchionR.y + ny * 2.0 };
+        const v4 = { x: stanchionL.x + nx * 2.0, y: stanchionL.y + ny * 2.0 };
+        ctx.fillStyle = isProcessing ? 'rgba(56, 189, 248, 0.18)' : 'rgba(16, 185, 129, 0.08)';
+        ctx.beginPath();
+        ctx.moveTo(v1.x, v1.y);
+        ctx.lineTo(v2.x, v2.y);
+        ctx.lineTo(v3.x, v3.y);
+        ctx.lineTo(v4.x, v4.y);
+        ctx.closePath();
+        ctx.fill();
+
+        // 7, 8, 9. COUNTER DESKS
+        const deskX = laneX + nx * 1.1;
+        const deskY = laneY + ny * 1.1;
+
+        // Active processing aura glow
+        if (isProcessing) {
+          ctx.save();
+          ctx.fillStyle = 'rgba(56, 189, 248, 0.35)';
+          ctx.beginPath();
+          ctx.arc(deskX, deskY, 2.2, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.restore();
+        }
+
+        // Physical Desk Pad (Rounded Box)
+        ctx.fillStyle = isCounterActive ? (isProcessing ? '#0C4A6E' : '#1E293B') : '#450A0A';
+        ctx.strokeStyle = isCounterActive ? (isProcessing ? '#38BDF8' : '#0EA5E9') : '#EF4444';
+        ctx.lineWidth = isProcessing ? 1.6 : 1.0;
+        ctx.beginPath();
+        ctx.roundRect(deskX - 1.1, deskY - 0.7, 2.2, 1.4, 0.3);
+        ctx.fill();
+        ctx.stroke();
+
+        // Optical Scanner Pad (embedded glass sensor)
+        ctx.fillStyle = isCounterActive ? (isProcessing ? '#38BDF8' : '#0369A1') : '#7F1D1D';
+        ctx.fillRect(deskX - 0.5, deskY - 0.35, 1.0, 0.7);
+
+        // LED Indicator Light
+        ctx.fillStyle = isCounterActive ? (isProcessing ? '#38BDF8' : '#10B981') : '#EF4444';
+        ctx.beginPath();
+        ctx.arc(deskX + 0.75, deskY - 0.35, 0.22, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Lane Metrics & Workload Tag
+        const laneQueueCount = agents.filter(
+          (a) => (a.state === 'QUEUING' || a.state === 'PROCESSING') && a.targetGateId === g.id && (a.assignedLane ?? 0) === l
+        ).length;
+
+        ctx.fillStyle = isProcessing ? '#38BDF8' : isCounterActive ? '#94A3B8' : '#EF4444';
+        ctx.font = '1.2px monospace';
+        ctx.textAlign = 'center';
+        const statusText = !isCounterActive
+          ? 'OFFLINE'
+          : isProcessing
+            ? `PROCESSING (${laneQueueCount})`
+            : `WAITING (${laneQueueCount})`;
+        ctx.fillText(statusText, deskX - nx * 1.5, deskY - ny * 1.5);
+
+        ctx.restore();
+      }
+
+      // Draw Dynamic Lane Balancing Trajectory for switching spectators
+      for (const ag of agents) {
+        if (ag.targetGateId === g.id && ag.isSwitchingLane && ag.switchSourceLane !== undefined) {
+          const srcOffset = ((ag.switchSourceLane - (totalLanes - 1) / 2) / totalLanes) * (g.width * 0.75);
+          const tgtOffset = (((ag.assignedLane ?? 0) - (totalLanes - 1) / 2) / totalLanes) * (g.width * 0.75);
+          const srcX = g.position.x + tx * srcOffset + nx * 5.0;
+          const srcY = g.position.y + ty * srcOffset + ny * 5.0;
+          const tgtX = g.position.x + tx * tgtOffset + nx * 4.5;
+          const tgtY = g.position.y + ty * tgtOffset + ny * 4.5;
+
+          this.drawDirectionalArrow(ctx, srcX, srcY, tgtX, tgtY, '#F59E0B', 1.0, 1.2);
+        }
+      }
+
+      // ========================================================
+      // 11. GATE ENTRY BOUNDARY (Turnstile threshold at 0m)
+      // ========================================================
+      ctx.save();
+      const bLeft = { x: g.position.x - tx * (g.width / 2), y: g.position.y - ty * (g.width / 2) };
+      const bRight = { x: g.position.x + tx * (g.width / 2), y: g.position.y + ty * (g.width / 2) };
+
+      ctx.strokeStyle = g.direction === 'CLOSED' || g.status === 'TEMPORARILY_CLOSED' ? '#EF4444' : '#10B981';
+      ctx.lineWidth = 2.4;
+      ctx.setLineDash([1.5, 1.0]);
+      ctx.beginPath();
+      ctx.moveTo(bLeft.x, bLeft.y);
+      ctx.lineTo(bRight.x, bRight.y);
+      ctx.stroke();
+
+      ctx.fillStyle = g.direction === 'CLOSED' ? '#EF4444' : '#34D399';
+      ctx.font = 'bold 1.7px Inter, sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText('11. Gate Entry Boundary / Turnstiles', g.position.x, g.position.y - 1.2);
+      ctx.restore();
+
+      // ========================================================
+      // 12. STADIUM-SIDE EXIT CONCOURSE (0m to -6m into stadium)
+      // ========================================================
+      ctx.save();
+      const exW = g.width * 0.85;
+      const ex1 = { x: g.position.x - tx * (exW / 2), y: g.position.y - ty * (exW / 2) };
+      const ex2 = { x: g.position.x + tx * (exW / 2), y: g.position.y + ty * (exW / 2) };
+      const ex3 = { x: ex2.x - nx * 6.0, y: ex2.y - ny * 6.0 };
+      const ex4 = { x: ex1.x - nx * 6.0, y: ex1.y - ny * 6.0 };
+
+      ctx.fillStyle = 'rgba(16, 185, 129, 0.05)';
+      ctx.strokeStyle = 'rgba(16, 185, 129, 0.35)';
+      ctx.lineWidth = 1.0;
+      ctx.setLineDash([2, 2]);
+      ctx.beginPath();
+      ctx.moveTo(ex1.x, ex1.y);
+      ctx.lineTo(ex2.x, ex2.y);
+      ctx.lineTo(ex3.x, ex3.y);
+      ctx.lineTo(ex4.x, ex4.y);
+      ctx.closePath();
+      ctx.fill();
+      ctx.stroke();
+
+      ctx.fillStyle = '#6EE7B7';
+      ctx.font = 'bold 1.7px Inter, sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText(`12. Concourse Exit (${g.admittedCount || g.totalProcessedCount || 0} admitted)`, g.position.x - nx * 3.5, g.position.y - ny * 3.5);
+
+      this.drawDirectionalArrow(
+        ctx,
+        g.position.x - nx * 1.0,
+        g.position.y - ny * 1.0,
+        g.position.x - nx * 5.0,
+        g.position.y - ny * 5.0,
+        'rgba(52, 211, 153, 0.7)',
+        1.1,
+        1.5
+      );
+      ctx.restore();
+
+      // ========================================================
+      // 13. DOWNSTREAM PASSAGE / CORRIDOR CONNECTION
+      // ========================================================
       const corr = venue.corridors.find((c) => c.id === g.downstreamCorridorId);
       if (corr) {
+        ctx.save();
         ctx.strokeStyle = corr.isBlocked ? 'rgba(239, 68, 68, 0.7)' : 'rgba(16, 185, 129, 0.7)';
         ctx.lineWidth = corr.width * 0.6;
         ctx.setLineDash([2, 1]);
@@ -1044,13 +1541,13 @@ export class CanvasRenderer {
         ctx.stroke();
 
         ctx.fillStyle = corr.isBlocked ? '#FCA5A5' : '#86EFAC';
-        ctx.font = '2.0px Inter, sans-serif';
+        ctx.font = 'bold 1.8px Inter, sans-serif';
+        ctx.textAlign = 'center';
         const midCorrX = (g.position.x + corr.end.x) / 2;
         const midCorrY = (g.position.y + corr.end.y) / 2;
-        ctx.fillText(corr.isBlocked ? 'BLOCKED CORRIDOR' : 'Downstream Passage', midCorrX, midCorrY);
+        ctx.fillText(corr.isBlocked ? '13. BLOCKED CORRIDOR' : '13. Downstream Passage to Concourse', midCorrX, midCorrY);
+        ctx.restore();
       }
-
-      ctx.restore();
     }
     ctx.restore();
   }

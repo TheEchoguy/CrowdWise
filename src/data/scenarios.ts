@@ -16,7 +16,7 @@ export const SCENARIOS: ScenarioDefinition[] = [
     parameters: {
       surgeMultiplier: 2.8,
       surgeDurationSecs: 180,
-      affectedGates: ['gate-1', 'gate-2', 'gate-3', 'gate-7', 'gate-12'],
+      affectedGates: ['gate-n1', 'gate-n2', 'gate-n3', 'gate-w2', 'gate-s2'],
       externalCrowdSurplus: 15000,
     },
     expectedRisks: [
@@ -58,22 +58,22 @@ export const SCENARIOS: ScenarioDefinition[] = [
   },
   {
     id: 'scanner-failure',
-    name: 'Scenario 2: Ticket Scanner Outage (Gate 2 & 7)',
+    name: 'Scenario 2: Ticket Scanner Outage (Gate N2 & W2)',
     category: 'ENTRANCE & HARDWARE FAILURES',
     venueId: 'chinnaswamy-stadium',
     description:
-      'Network or power glitch causes 75% of optical scanners at Gate 2 and Gate 7 to drop offline, drastically cutting processing throughput while crowds continue to arrive.',
-    initialConditions: 'Gate 2 and Gate 7 operating with 6 scanners each.',
+      'Optical turnstile scanner hardware fault causes 2 of 3 lanes at Gate N2 and Gate W2 to drop offline, drastically cutting processing throughput while crowds continue to arrive.',
+    initialConditions: 'Gate N2 and Gate W2 operating with 3 scanners each.',
     triggerTimeSecs: 40,
     parameters: {
-      failedGateIds: ['gate-2', 'gate-7'],
-      offlineScannersCount: 4,
+      failedGateIds: ['gate-n2', 'gate-w2'],
+      offlineScannersCount: 2,
       failureDurationSecs: 120,
     },
     expectedRisks: [
-      'Immediate queue spike and wait time increase from 4 mins to 25+ mins',
+      'Immediate queue spike and wait time increase from 3 mins to 20+ mins',
       'Local crowd frustration and surging near turnstiles',
-      'Crowd naturally bleeding toward adjacent gates without coordination',
+      'Spectators waiting in dedicated holding pens outside the gates',
     ],
     recommendedInterventions: ['SPARE_SCANNERS', 'REROUTE_APPROACH', 'EARLY_PUBLIC_COMMUNICATION'],
     completionCriteria:
@@ -81,15 +81,15 @@ export const SCENARIOS: ScenarioDefinition[] = [
   },
   {
     id: 'complete-gate-closure',
-    name: 'Scenario 3: Complete Gate Closure (Gate 1 Main Portal)',
+    name: 'Scenario 3: Complete Gate Closure (Gate N1 VIP Portal)',
     category: 'ENTRANCE & HARDWARE FAILURES',
     venueId: 'chinnaswamy-stadium',
     description:
-      'A physical turnstile or security barrier fault forces the total closure of Gate 1. Inflow must be routed to Gate 2 and Gate 3 without creating new downstream choke points.',
-    initialConditions: 'All gates open; Gate 1 processing high volume from North plaza.',
+      'A physical turnstile or security barrier fault forces the total closure of Gate N1. Inflow is paused and spectators staged in holding area.',
+    initialConditions: 'All gates open; Gate N1 processing volume from North plaza.',
     triggerTimeSecs: 35,
     parameters: {
-      closedGateId: 'gate-1',
+      closedGateId: 'gate-n1',
     },
     expectedRisks: [
       'Sudden accumulation of stranded attendees at Gate 1 boundary',
@@ -271,6 +271,34 @@ export const SCENARIOS: ScenarioDefinition[] = [
     recommendedInterventions: ['EARLY_PUBLIC_COMMUNICATION'],
     completionCriteria:
       'Test distribution of crowd between multiple shelters and covered concourses.',
+  },
+  {
+    id: 'multi-gate-congestion-demo',
+    name: 'Multi-Gate Crowd Congestion & Counter Management Demo',
+    category: 'CONGESTION DEMO',
+    venueId: 'chinnaswamy-stadium',
+    description:
+      'Demonstrates concurrent independent crowd arrivals across all 10 regular entry gates. Gate E2 experiences heavy demand (240 p/min vs 180 p/min capacity) causing visible queue accumulation across its 3 counters, while Gate E3 receives moderate demand (60 p/min) and maintains clear queue flow.',
+    factualBackground:
+      'In high-density stadium operations, gate arrival rates differ dramatically by public transport proximity. This scenario tests multi-counter processing dynamics, showing queue growth where demand exceeds service capacity and normal flow where capacity is adequate.',
+    initialConditions:
+      'All 10 regular entry gates operational with 3 scanner counters each (1 person/sec service rate = 180 p/min capacity). Gate E2 arrival rate set to 240 p/min; Gate E3 arrival rate set to 60 p/min; other regular gates at 120 p/min.',
+    triggerTimeSecs: 0,
+    parameters: {
+      congestedGateId: 'gate-e2',
+      congestedArrivalRate: 240,
+      normalGateId: 'gate-e3',
+      normalArrivalRate: 60,
+      defaultArrivalRate: 120,
+    },
+    expectedRisks: [
+      'Gate E2 queue growth beyond physical corral capacity',
+      'Longer waiting times at Gate E2 while Gate E3 operates with zero delay',
+      'Counter-level queuing disparities if individual scanners fail',
+    ],
+    recommendedInterventions: ['SPARE_SCANNERS', 'REGULATE_ADMISSION'],
+    completionCriteria:
+      'Observe visible crowd arrivals independently at each gate, verify Gate E2 queue growth and Gate E3 queue clearance, and test counter failure and recovery impacts.',
   },
 ];
 

@@ -45,6 +45,10 @@ export const IncidentResponseView: React.FC = () => {
       medId = 'med-north';
     } else if (newIncidentType === 'BLOCKED_ROUTE') {
       loc = { x: 130, y: 25 };
+    } else if (newIncidentType === 'SCANNER_FAILURE') {
+      loc = { x: 159, y: 22 };
+    } else if (newIncidentType === 'GATE_CLOSURE') {
+      loc = { x: 130, y: 18 };
     }
 
     addHypotheticalIncident({
@@ -53,7 +57,10 @@ export const IncidentResponseView: React.FC = () => {
       position: loc,
       severity: newIncidentSeverity,
       description: `Hypothetical incident reported near ${currentVenue.name}. Testing responder path and crowd diversions.`,
-      suggestedAction: 'Dispatch ground marshals and calculate emergency vehicle corridor.',
+      suggestedAction:
+        newIncidentType === 'SCANNER_FAILURE' || newIncidentType === 'GATE_CLOSURE'
+          ? 'Trigger intelligent automatic gate rerouting and dynamic steward diversion deployment.'
+          : 'Dispatch ground marshals and calculate emergency vehicle corridor.',
       assignedMedicalPointId: newIncidentType === 'MEDICAL' ? medId : undefined,
     });
   };
@@ -105,6 +112,8 @@ export const IncidentResponseView: React.FC = () => {
                     const t = e.target.value as IncidentType;
                     setNewIncidentType(t);
                     if (t === 'MEDICAL') setNewIncidentTitle('Acute Heat Exhaustion / Collapse');
+                    else if (t === 'SCANNER_FAILURE') setNewIncidentTitle('Optical Ticket Scanner Outage (Gate 2)');
+                    else if (t === 'GATE_CLOSURE') setNewIncidentTitle('Complete Gate Portal Closure (Gate 2)');
                     else if (t === 'BLOCKED_ROUTE') setNewIncidentTitle('Obstruction on Emergency Access Road');
                     else if (t === 'STAGE_SURGE') setNewIncidentTitle('Presentation Podium Crowd Surge');
                     else setNewIncidentTitle('Operational Contingency');
@@ -112,6 +121,8 @@ export const IncidentResponseView: React.FC = () => {
                   className="w-full bg-navy-950 border border-navy-600 rounded-lg p-2 text-slate-200 focus:outline-none"
                 >
                   <option value="MEDICAL">Medical Emergency (First-Aid Route)</option>
+                  <option value="SCANNER_FAILURE">Optical Scanner Failure (Turnstiles Offline)</option>
+                  <option value="GATE_CLOSURE">Complete Gate Barrier Closure</option>
                   <option value="BLOCKED_ROUTE">Blocked Emergency Vehicle Route</option>
                   <option value="STAGE_SURGE">Main Stage / Presentation Surge</option>
                   <option value="CORRIDOR_BOTTLENECK">Concourse Corridor Bottleneck</option>

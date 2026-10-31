@@ -16,6 +16,122 @@ export type GateStatus =
   | 'EMERGENCY_ONLY'
   | 'UNAVAILABLE';
 
+export type StadiumSide = 'ALL' | 'NORTH' | 'WEST' | 'SOUTH' | 'EAST' | 'CUSTOM';
+
+export type GateType = 'REGULAR' | 'VIP' | 'EXIT_ONLY';
+
+export type CounterStatus = 'OPERATIONAL' | 'FAILED';
+
+export interface ScannerCounter {
+  id: string; // e.g. 'gate-e2-c1'
+  name: string; // 'Counter 1'
+  status: CounterStatus;
+  serviceRatePerSec: number; // people per second
+  totalProcessedCount: number;
+  position?: Vector2D;
+  isProcessing?: boolean;
+  currentProcessingAgentId?: number;
+  queueCount?: number;
+}
+
+export type OverflowDoorStatus = 'CLOSED' | 'OPENING' | 'OPEN' | 'CLOSING' | 'UNAVAILABLE';
+
+export interface OverflowDoorConfig {
+  enabled: boolean;
+  status: OverflowDoorStatus;
+  doorProgress: number; // 0.0 (fully closed) to 1.0 (fully open)
+  highCongestionThreshold: number; // default: 60 people waiting per regular lane
+  extremeCongestionThreshold: number; // default: 80 people waiting in each of the three lanes
+  minSustainedExtremeSecs: number; // default: 5.0 seconds
+  sustainedExtremeTimer: number; // live tracking seconds
+  recoveryThreshold: number; // default: 40 people waiting per regular lane
+  minRecoveryDurationSecs: number; // default: 5.0 seconds
+  recoveryTimer: number; // live tracking seconds
+  serviceRatePerSec: number; // default: 1.0 p/s (60 p/m)
+  serviceRatePerMin: number; // 60 p/m
+  queueCount: number; // live count waiting for overflow door
+  processingCount: number; // live count being processed at overflow door
+  totalProcessedCount: number; // total admitted through overflow door
+  estimatedWaitSecs: number;
+  timeSpentOpenSecs: number;
+  activationReason?: string;
+  isAuthorized: boolean;
+  manualOverride?: 'AUTO' | 'FORCE_OPEN' | 'FORCE_CLOSED';
+}
+
+export type DemonstrationProfileType =
+  | 'NORMAL'
+  | 'HEAVY'
+  | 'SURGE'
+  | 'FAIL_1'
+  | 'FAIL_2'
+  | 'FAIL_ALL';
+
+export function createDefaultOverflowDoor(gateId: string): OverflowDoorConfig {
+  return {
+    enabled: true,
+    status: 'CLOSED',
+    doorProgress: 0.0,
+    highCongestionThreshold: 60,
+    extremeCongestionThreshold: 80,
+    minSustainedExtremeSecs: 5.0,
+    sustainedExtremeTimer: 0.0,
+    recoveryThreshold: 40,
+    minRecoveryDurationSecs: 5.0,
+    recoveryTimer: 0.0,
+    serviceRatePerSec: 1.0,
+    serviceRatePerMin: 60,
+    queueCount: 0,
+    processingCount: 0,
+    totalProcessedCount: 0,
+    estimatedWaitSecs: 0,
+    timeSpentOpenSecs: 0.0,
+    isAuthorized: true,
+    manualOverride: 'AUTO',
+  };
+}
+
+export interface GateLaneMetrics {
+  laneIndex: number; // 0, 1, 2 for regular, 3 for overflow
+  laneNumber: number; // 1, 2, 3, 4 (Overflow)
+  counterId: string;
+  counterName: string;
+  counterStatus: CounterStatus | OverflowDoorStatus;
+  waitingCount: number;
+  processingCount: number;
+  totalLaneCount: number;
+  serviceRatePerSec: number;
+  serviceRatePerMin: number;
+  throughputPerMin: number;
+  estimatedWaitSecs: number;
+  counterUtilization: number;
+  laneCapacity: number;
+  laneOccupancyPercent: number;
+  congestionStatus: 'OPTIMAL' | 'MODERATE' | 'CONGESTED' | 'OVERFLOW';
+  totalAdmitted: number;
+  laneSwitchesIn: number;
+  laneSwitchesOut: number;
+}
+
+export type GateOperationalControlState =
+  | 'NORMAL'
+  | 'QUEUE_BUILDING'
+  | 'CONGESTED'
+  | 'ADMISSION_METERING'
+  | 'ADMISSION_PAUSED'
+  | 'RECOVERY';
+
+export type GateAdmissionScheduleMode = 'RATE' | 'BATCHES';
+
+export interface GateArrivalSchedule {
+  mode: GateAdmissionScheduleMode;
+  arrivalRatePerMin: number;
+  batchSize?: number;
+  batchIntervalMins?: number;
+  totalBatches?: number;
+  batchesCompleted?: number;
+}
+
 export interface Gate {
   id: string;
   name: string;
@@ -46,6 +162,42 @@ export interface Gate {
   maxQueueRecorded?: number;
   queueAreaCapacity?: number;
   spillbackCount?: number;
+  redirectedCount?: number; // count of redirected pedestrians received
+  deflectedCount?: number; // count of pedestrians deflected away due to failure/closure
+  assignedIncomingDemand?: number; // count of pedestrians currently approaching this gate
+  isReroutingActive?: boolean;
+  unavailabilityReason?: string;
+
+  // 12-Gate Ticket-Restricted System additions
+  stadiumSide?: StadiumSide;
+  gateType?: GateType;
+  counters?: ScannerCounter[];
+  assignedSpectatorCount?: number;
+  holdingAreaCapacity?: number;
+  holdingAreaOccupancy?: number;
+  holdingAreaPosition?: Vector2D;
+  maxSafeQueueOccupancy?: number;
+  operationalControlState?: GateOperationalControlState;
+  arrivalSchedule?: GateArrivalSchedule;
+  inHoldingCount?: number;
+  waitingInQueueCount?: number;
+  processingCount?: number;
+  remainingToArriveCount?: number;
+  strictTicketEnforcement?: boolean;
+  spawnPosition?: Vector2D;
+  arrivalRatePerMin?: number;
+  counter1QueueCount?: number;
+  counter2QueueCount?: number;
+  counter3QueueCount?: number;
+  queueGrowthRatePerMin?: number;
+  estimatedClearanceTimeSecs?: number;
+  laneMetrics?: GateLaneMetrics[];
+  totalLaneSwitches?: number;
+  laneBalancingEnabled?: boolean;
+  overflowDoor?: OverflowDoorConfig;
+  isArrivalsPaused?: boolean;
+  approachingCount?: number;
+  demonstrationProfile?: DemonstrationProfileType;
 }
 
 export type ZoneRiskLevel = 'NORMAL' | 'WATCH' | 'HIGH_CONGESTION' | 'CRITICAL';
@@ -145,6 +297,7 @@ export type AgentState =
   | 'APPROACHING'
   | 'QUEUING'
   | 'PROCESSING'
+  | 'HOLDING'
   | 'ADMITTED'
   | 'INSIDE'
   | 'EN_ROUTE_DESTINATION'
@@ -179,6 +332,20 @@ export interface CrowdAgent {
   enteredTime?: number;
   groupId?: number;
   requiresAssistance?: boolean;
+  lastRerouteTime?: number;
+  rerouteCount?: number;
+  originalTargetGateId?: string;
+  isRerouted?: boolean;
+  ticketGateId?: string;
+  permittedAlternativeGateIds?: string[];
+  inHoldingArea?: boolean;
+  assignedCounterId?: string;
+  assignedGateId?: string;
+  assignedLane?: number; // 0, 1, or 2 for Counter 1, 2, or 3
+  lastLaneSwitchTime?: number;
+  laneSwitchCount?: number;
+  isSwitchingLane?: boolean;
+  switchSourceLane?: number;
 }
 
 export type IncidentType =
@@ -322,6 +489,14 @@ export interface SimulationMetricsSummary {
   totalAdmitted?: number;
   totalWaitingOutside?: number;
   totalProcessing?: number;
+  totalRedirectedCount?: number;
+  unavailableGatesCount?: number;
+  totalAvailableCapacityPerMin?: number;
+  demandToCapacityRatio?: number;
+  unservedDemandCount?: number;
+  affectedPedestriansCount?: number;
+  totalInHolding?: number;
+  totalAssigned?: number;
 }
 
 export interface GateEntrySnapshot {
@@ -413,8 +588,6 @@ export interface RenderLayers {
 
 export type RenderDetailLevel = 'DETAILED' | 'SIMPLIFIED' | 'DENSITY_ONLY';
 
-export type StadiumSide = 'ALL' | 'NORTH' | 'WEST' | 'SOUTH' | 'EAST' | 'CUSTOM';
-
 export type GateRoutingPolicy =
   | 'SHORTEST_QUEUE'
   | 'LEAST_WAIT_TIME'
@@ -449,4 +622,244 @@ export interface GateSideEvent {
     | 'DOWNSTREAM_HOLD'
     | 'CONFIG_CHANGE';
   message: string;
+}
+
+// ============================================================================
+// MODULE 1: GATE CLOSURE & RECOVERY MANAGEMENT TYPES
+// ============================================================================
+export type GateClosureReason =
+  | 'SECURITY'
+  | 'OBSTRUCTION'
+  | 'STRUCTURAL'
+  | 'CONGESTION'
+  | 'SCANNER_FAILURE'
+  | 'OPERATOR_DIRECTIVE';
+
+export type GateClosureState =
+  | 'OPERATIONAL'
+  | 'DEGRADED'
+  | 'CLOSURE_INITIATED'
+  | 'CLOSED'
+  | 'RECOVERY_CHECK'
+  | 'REOPENING'
+  | 'OPERATIONAL_AFTER_RECOVERY';
+
+export type GateClosureScenarioType =
+  | 'FAIL_1_COUNTER'
+  | 'FAIL_2_COUNTERS'
+  | 'FAIL_3_COUNTERS'
+  | 'FULL_CLOSURE_SECURITY'
+  | 'FULL_CLOSURE_OBSTRUCTION'
+  | 'FULL_CLOSURE_STRUCTURAL'
+  | 'FULL_CLOSURE_CONGESTION'
+  | 'TEMPORARY_CLOSURE_RECOVERY';
+
+export interface AlternativeGateEvaluation {
+  gateId: string;
+  gateName: string;
+  isAuthorized: boolean;
+  isAccessible: boolean;
+  walkingDistanceM: number;
+  currentQueue: number;
+  operationalCapacity: number;
+  estimatedWaitSecs: number;
+  recommendationScore: number; // 0 to 100
+  rejectionReason?: string;
+}
+
+export interface GateClosureIncidentRecord {
+  incidentId: string;
+  gateId: string;
+  gateName: string;
+  state: GateClosureState;
+  reason: GateClosureReason;
+  initiatedAtSimTime: number;
+  recoveredAtSimTime?: number;
+  closureDurationSecs: number;
+  affectedQueuersCount: number;
+  divertedToHoldingCount: number;
+  reroutedToAlternativeCount: number;
+  overflowDoorAllowed: boolean;
+  recoveryChecklist: {
+    scannersVerified: boolean;
+    obstructionCleared: boolean;
+    securityAuthorized: boolean;
+    structureApproved: boolean;
+    congestionReduced: boolean;
+  };
+}
+
+// ============================================================================
+// MODULE 2: CROWD MODEL CALIBRATION & VALIDATION TYPES
+// ============================================================================
+export type ValidationMetricType =
+  | 'WALKING_SPEED'
+  | 'SPEED_VS_DENSITY'
+  | 'PEDESTRIAN_DENSITY'
+  | 'PASSAGE_FLOW_RATE'
+  | 'QUEUE_GROWTH_RATE'
+  | 'QUEUE_DISCHARGE_RATE'
+  | 'COUNTER_SERVICE_TIME'
+  | 'AVERAGE_WAIT_TIME'
+  | 'COUNTERFLOW_SPEED_REDUCTION'
+  | 'BOTTLENECK_THROUGHPUT'
+  | 'TRAVEL_TIME'
+  | 'INFLOW_OUTFLOW_BALANCE';
+
+export type ReferenceDatasetSource =
+  | 'PUBLISHED_REFERENCE'
+  | 'MEASURED_REAL_WORLD'
+  | 'USER_ENTERED'
+  | 'SYNTHETIC_TEST';
+
+export interface ReferenceDataset {
+  id: string;
+  name: string;
+  metric: ValidationMetricType;
+  referenceValue?: number;
+  referenceRange?: [number, number];
+  unit: string;
+  sourceTitle: string;
+  sourceOrganization: string;
+  publicationDate: string;
+  sourceUrl?: string;
+  measurementConditions: string;
+  geometryOrPassageWidth?: string;
+  densityConditions?: string;
+  dataLimitations: string;
+  sourceType: ReferenceDatasetSource;
+}
+
+export interface ValidationComparisonResult {
+  metric: ValidationMetricType;
+  metricLabel: string;
+  simulatedValue: number;
+  referenceValue: number;
+  referenceRange?: [number, number];
+  difference: number;
+  absoluteError: number;
+  percentageError?: number;
+  isWithinReferenceRange: boolean;
+  unit: string;
+  sampleSize: number;
+  provenance: string;
+  evaluationStatus: 'PASS' | 'DEVIATION' | 'UNVALIDATED';
+}
+
+export interface ModelCalibrationParameters {
+  preferredSpeed: number; // m/s
+  socialRepulsionStrength: number;
+  personalSpaceRadius: number;
+  densitySpeedSensitivity: number;
+  counterServiceRate: number; // p/s
+  laneSwitchSensitivity: number;
+}
+
+// ============================================================================
+// MODULE 3: MULTI-DIRECTIONAL CROWD FLOW TYPES
+// ============================================================================
+export type MultiDirectionalPresetType =
+  | 'INBOUND_ONLY'
+  | 'INBOUND_VS_OUTBOUND'
+  | 'TWO_CROSSING_FLOWS'
+  | 'HEAVY_BIDIRECTIONAL'
+  | 'NARROW_CORRIDOR_COUNTERFLOW'
+  | 'COUNTERFLOW_DIRECTIONAL_SEPARATION'
+  | 'COUNTERFLOW_CONTROLLED_ARRIVALS'
+  | 'COUNTERFLOW_ROUTE_REDISTRIBUTION';
+
+export type StreamInterventionType =
+  | 'NONE'
+  | 'DIRECTIONAL_LANES'
+  | 'METERED_INFLOW'
+  | 'ROUTE_REDISTRIBUTION'
+  | 'TIME_BASED_ALTERNATION';
+
+export interface PedestrianStreamConfig {
+  id: string;
+  name: string;
+  color: string;
+  origin: Vector2D;
+  destination: Vector2D;
+  spawnRatePerMin: number;
+  totalPedestrians: number;
+  preferredSpeedMean: number;
+  activeCount: number;
+  completedCount: number;
+  stalledCount: number;
+  averageSpeed: number;
+}
+
+export interface MultiDirectionalMetrics {
+  simTimeSecs: number;
+  totalActive: number;
+  totalCompleted: number;
+  totalStalled: number;
+  counterflowFrictionIndex: number;
+  passageThroughputPerMin: number;
+  streamMetrics: {
+    streamId: string;
+    streamName: string;
+    activeCount: number;
+    completedCount: number;
+    avgSpeed: number;
+    avgTravelTimeSecs: number;
+    stalledCount: number;
+    throughputPerMin?: number;
+  }[];
+}
+
+// ============================================================================
+// MODULE 4: SPATIAL RISK PROPAGATION & COUNTERFACTUAL TYPES
+// ============================================================================
+export interface SpatialZoneRiskSummary {
+  zoneId: string;
+  zoneName: string;
+  category: ZoneCategory;
+  usableAreaSqM: number;
+  maxRecommendedDensity: number;
+  currentOccupancy: number;
+  currentDensity: number;
+  maxDensityRecorded: number;
+  durationAtElevatedRiskSecs: number;
+  inflowRatePerMin: number;
+  outflowRatePerMin: number;
+  netAccumulationRate: number;
+  riskLevel: ZoneRiskLevel;
+  isHotspot: boolean;
+  isSecondaryHotspot: boolean;
+  riskTransferSourceZoneId?: string;
+  connectedZoneIds: string[];
+}
+
+export interface HotspotPropagationPrediction {
+  sourceHotspotZoneId: string;
+  sourceHotspotZoneName: string;
+  predictedImpactedZoneIds: string[];
+  predictedImpactedZoneNames: string[];
+  estimatedSpilloverRatePerMin: number;
+  hasCapacityForSpillover: boolean;
+  predictedSecondaryHotspot: boolean;
+  explanation: string;
+  confidenceLevel: 'HIGH' | 'MEDIUM' | 'LOW';
+}
+
+export type CounterfactualRunMode =
+  | 'BASELINE'
+  | 'PROPOSED_INTERVENTION'
+  | 'ALTERNATIVE_INTERVENTION';
+
+export interface CounterfactualComparisonSummary {
+  scenarioId: string;
+  scenarioName: string;
+  simTimeSecs: number;
+  baselineMaxRisk: ZoneRiskLevel;
+  proposedMaxRisk: ZoneRiskLevel;
+  alternativeMaxRisk: ZoneRiskLevel;
+  transferredRiskDetected: boolean;
+  transferredRiskDetails: string;
+  newHotspotZoneNames: string[];
+  relievedZoneNames: string[];
+  worsenedZoneNames: string[];
+  overallVerdict: 'NET_IMPROVEMENT' | 'TRANSFERRED_RISK' | 'INEFFECTIVE' | 'MIXED';
 }

@@ -1,4 +1,15 @@
-import { Venue, Gate, Zone, Corridor, MedicalPoint, AttractionPoint, ApproachRoute } from '../types';
+import {
+  Venue,
+  Gate,
+  Zone,
+  Corridor,
+  MedicalPoint,
+  AttractionPoint,
+  ApproachRoute,
+  ScannerCounter,
+  Vector2D,
+  createDefaultOverflowDoor,
+} from '../types';
 
 // Stadium dimensions in meters (260m x 220m)
 const CX = 130;
@@ -10,59 +21,379 @@ const CONCOURSE_R_Y = 75;
 const PERIMETER_R_X = 105; // Outer wall
 const PERIMETER_R_Y = 92;
 
-// Generate 21 Gates around the stadium perimeter
-const TOTAL_GATES = 21;
-const gates: Gate[] = [];
-
-for (let i = 1; i <= TOTAL_GATES; i++) {
-  // Angle around ellipse: Gate 1 starts North-East and moves clockwise
-  const angle = ((i - 1) / TOTAL_GATES) * 2 * Math.PI - Math.PI / 2;
-  const x = Math.round(CX + Math.cos(angle) * PERIMETER_R_X);
-  const y = Math.round(CY + Math.sin(angle) * PERIMETER_R_Y);
-
-  // Default operational profiles
-  // Gates 1 to 14 are standard public entrances
-  // Gates 15 to 17 are VIP / Hospitality
-  // Gates 18, 19 are Exit-only / Secondary
-  // Gates 20, 21 are Emergency / Service
-  let direction: Gate['direction'] = 'ENTRY';
-  let scanners = 4;
-  let status: Gate['status'] = 'OPERATIONAL';
-  let width = 6.0;
-
-  if (i === 18 || i === 19) {
-    direction = 'EXIT';
-    scanners = 2;
-    status = 'EXIT_ONLY';
-  } else if (i === 20 || i === 21) {
-    direction = 'EMERGENCY_ONLY';
-    scanners = 1;
-    status = 'EMERGENCY_ONLY';
-    width = 8.0;
-  } else if (i === 1 || i === 2 || i === 7 || i === 8 || i === 12 || i === 13) {
-    // Primary high-capacity gates
-    scanners = 6;
-    width = 7.5;
+// Helper to create scanner counters
+function createCounters(gateId: string, count: number, ratePerSec: number = 1.0): ScannerCounter[] {
+  const counters: ScannerCounter[] = [];
+  for (let i = 1; i <= count; i++) {
+    counters.push({
+      id: `${gateId}-c${i}`,
+      name: `Counter ${i}`,
+      status: 'OPERATIONAL',
+      serviceRatePerSec: ratePerSec,
+      totalProcessedCount: 0,
+    });
   }
+  return counters;
+}
 
-  gates.push({
-    id: `gate-${i}`,
-    name: `Gate ${i}`,
-    position: { x, y },
-    width,
-    direction,
-    scannerCount: scanners,
-    operationalScanners: scanners,
-    scannerProcessingRatePerMin: 12, // 12 people per scanner/min (~5 secs per person)
-    physicalPassageCapacityPerMin: scanners * 20,
+// Exactly 12 Operationally Modelled Gates (3 per side: North, East, South, West)
+const gates: Gate[] = [
+  // NORTH (3 Gates: N1 VIP, N2 Regular, N3 Regular)
+  {
+    id: 'gate-n1',
+    name: 'Gate N1 [VIP]',
+    position: { x: 130, y: 18 },
+    width: 6.0,
+    direction: 'ENTRY',
+    scannerCount: 2,
+    operationalScanners: 2,
+    scannerProcessingRatePerMin: 60,
+    scannerProcessingRatePerSec: 1.0,
+    physicalPassageCapacityPerMin: 120,
     currentQueue: 0,
     queueWaitTimeSecs: 0,
-    status,
+    status: 'OPERATIONAL',
     warningLevel: 'NORMAL',
-    downstreamCorridorId: `corridor-gate-${i}`,
-    suggestedAction: 'Monitor standard queue formation',
-  });
-}
+    downstreamCorridorId: 'corridor-gate-n1',
+    suggestedAction: 'VIP priority screening operational',
+    stadiumSide: 'NORTH',
+    gateType: 'VIP',
+    counters: createCounters('gate-n1', 2, 1.0),
+    assignedSpectatorCount: 500,
+    holdingAreaCapacity: 200,
+    holdingAreaOccupancy: 0,
+    holdingAreaPosition: { x: 130, y: 6 },
+    spawnPosition: { x: 130, y: 4 },
+    maxSafeQueueOccupancy: 60,
+    operationalControlState: 'NORMAL',
+    strictTicketEnforcement: true,
+  },
+  {
+    id: 'gate-n2',
+    name: 'Gate N2',
+    position: { x: 95, y: 25 },
+    width: 7.5,
+    direction: 'ENTRY',
+    scannerCount: 3,
+    operationalScanners: 3,
+    scannerProcessingRatePerMin: 60,
+    scannerProcessingRatePerSec: 1.0,
+    physicalPassageCapacityPerMin: 180,
+    currentQueue: 0,
+    queueWaitTimeSecs: 0,
+    status: 'OPERATIONAL',
+    warningLevel: 'NORMAL',
+    downstreamCorridorId: 'corridor-gate-n2',
+    suggestedAction: 'Monitor regular queue formation',
+    stadiumSide: 'NORTH',
+    gateType: 'REGULAR',
+    counters: createCounters('gate-n2', 3, 1.0),
+    assignedSpectatorCount: 4000,
+    holdingAreaCapacity: 500,
+    holdingAreaOccupancy: 0,
+    holdingAreaPosition: { x: 80, y: 12 },
+    spawnPosition: { x: 86, y: 6 },
+    maxSafeQueueOccupancy: 400,
+    operationalControlState: 'NORMAL',
+    strictTicketEnforcement: true,
+  },
+  {
+    id: 'gate-n3',
+    name: 'Gate N3',
+    position: { x: 165, y: 25 },
+    width: 7.5,
+    direction: 'ENTRY',
+    scannerCount: 3,
+    operationalScanners: 3,
+    scannerProcessingRatePerMin: 60,
+    scannerProcessingRatePerSec: 1.0,
+    physicalPassageCapacityPerMin: 180,
+    currentQueue: 0,
+    queueWaitTimeSecs: 0,
+    status: 'OPERATIONAL',
+    warningLevel: 'NORMAL',
+    downstreamCorridorId: 'corridor-gate-n3',
+    suggestedAction: 'Monitor regular queue formation',
+    stadiumSide: 'NORTH',
+    gateType: 'REGULAR',
+    counters: createCounters('gate-n3', 3, 1.0),
+    assignedSpectatorCount: 4000,
+    holdingAreaCapacity: 500,
+    holdingAreaOccupancy: 0,
+    holdingAreaPosition: { x: 180, y: 12 },
+    spawnPosition: { x: 174, y: 6 },
+    maxSafeQueueOccupancy: 400,
+    operationalControlState: 'NORMAL',
+    strictTicketEnforcement: true,
+  },
+
+  // EAST (3 Gates: E1 Regular, E2 Regular, E3 Regular)
+  {
+    id: 'gate-e1',
+    name: 'Gate E1',
+    position: { x: 230, y: 70 },
+    width: 7.5,
+    direction: 'ENTRY',
+    scannerCount: 3,
+    operationalScanners: 3,
+    scannerProcessingRatePerMin: 60,
+    scannerProcessingRatePerSec: 1.0,
+    physicalPassageCapacityPerMin: 180,
+    currentQueue: 0,
+    queueWaitTimeSecs: 0,
+    status: 'OPERATIONAL',
+    warningLevel: 'NORMAL',
+    downstreamCorridorId: 'corridor-gate-e1',
+    suggestedAction: 'Monitor regular queue formation',
+    stadiumSide: 'EAST',
+    gateType: 'REGULAR',
+    counters: createCounters('gate-e1', 3, 1.0),
+    assignedSpectatorCount: 4000,
+    holdingAreaCapacity: 500,
+    holdingAreaOccupancy: 0,
+    holdingAreaPosition: { x: 246, y: 58 },
+    spawnPosition: { x: 252, y: 62 },
+    maxSafeQueueOccupancy: 400,
+    operationalControlState: 'NORMAL',
+    strictTicketEnforcement: true,
+  },
+  {
+    id: 'gate-e2',
+    name: 'Gate E2',
+    position: { x: 235, y: 110 },
+    width: 7.5,
+    direction: 'ENTRY',
+    scannerCount: 3,
+    operationalScanners: 3,
+    scannerProcessingRatePerMin: 60,
+    scannerProcessingRatePerSec: 1.0,
+    physicalPassageCapacityPerMin: 180,
+    currentQueue: 0,
+    queueWaitTimeSecs: 0,
+    status: 'OPERATIONAL',
+    warningLevel: 'NORMAL',
+    downstreamCorridorId: 'corridor-gate-e2',
+    suggestedAction: 'Monitor regular queue formation',
+    stadiumSide: 'EAST',
+    gateType: 'REGULAR',
+    counters: createCounters('gate-e2', 3, 1.0),
+    assignedSpectatorCount: 4000,
+    holdingAreaCapacity: 500,
+    holdingAreaOccupancy: 0,
+    holdingAreaPosition: { x: 252, y: 110 },
+    spawnPosition: { x: 255, y: 110 },
+    maxSafeQueueOccupancy: 400,
+    operationalControlState: 'NORMAL',
+    strictTicketEnforcement: true,
+  },
+  {
+    id: 'gate-e3',
+    name: 'Gate E3',
+    position: { x: 230, y: 150 },
+    width: 7.5,
+    direction: 'ENTRY',
+    scannerCount: 3,
+    operationalScanners: 3,
+    scannerProcessingRatePerMin: 60,
+    scannerProcessingRatePerSec: 1.0,
+    physicalPassageCapacityPerMin: 180,
+    currentQueue: 0,
+    queueWaitTimeSecs: 0,
+    status: 'OPERATIONAL',
+    warningLevel: 'NORMAL',
+    downstreamCorridorId: 'corridor-gate-e3',
+    suggestedAction: 'Monitor regular queue formation',
+    stadiumSide: 'EAST',
+    gateType: 'REGULAR',
+    counters: createCounters('gate-e3', 3, 1.0),
+    assignedSpectatorCount: 4000,
+    holdingAreaCapacity: 500,
+    holdingAreaOccupancy: 0,
+    holdingAreaPosition: { x: 246, y: 162 },
+    spawnPosition: { x: 252, y: 158 },
+    maxSafeQueueOccupancy: 400,
+    operationalControlState: 'NORMAL',
+    strictTicketEnforcement: true,
+  },
+
+  // SOUTH (3 Gates: S1 Exit-only, S2 Regular, S3 Regular)
+  {
+    id: 'gate-s1',
+    name: 'Gate S1 [EXIT]',
+    position: { x: 130, y: 202 },
+    width: 8.0,
+    direction: 'EXIT',
+    scannerCount: 0,
+    operationalScanners: 0,
+    scannerProcessingRatePerMin: 0,
+    scannerProcessingRatePerSec: 0,
+    physicalPassageCapacityPerMin: 240,
+    currentQueue: 0,
+    queueWaitTimeSecs: 0,
+    status: 'EXIT_ONLY',
+    warningLevel: 'NORMAL',
+    downstreamCorridorId: 'corridor-gate-s1',
+    suggestedAction: 'Designated outbound egress only',
+    stadiumSide: 'SOUTH',
+    gateType: 'EXIT_ONLY',
+    counters: [],
+    assignedSpectatorCount: 0,
+    holdingAreaCapacity: 200,
+    holdingAreaOccupancy: 0,
+    holdingAreaPosition: { x: 130, y: 214 },
+    spawnPosition: { x: 130, y: 216 },
+    maxSafeQueueOccupancy: 60,
+    operationalControlState: 'NORMAL',
+    strictTicketEnforcement: true,
+  },
+  {
+    id: 'gate-s2',
+    name: 'Gate S2',
+    position: { x: 95, y: 195 },
+    width: 7.5,
+    direction: 'ENTRY',
+    scannerCount: 3,
+    operationalScanners: 3,
+    scannerProcessingRatePerMin: 60,
+    scannerProcessingRatePerSec: 1.0,
+    physicalPassageCapacityPerMin: 180,
+    currentQueue: 0,
+    queueWaitTimeSecs: 0,
+    status: 'OPERATIONAL',
+    warningLevel: 'NORMAL',
+    downstreamCorridorId: 'corridor-gate-s2',
+    suggestedAction: 'Monitor regular queue formation',
+    stadiumSide: 'SOUTH',
+    gateType: 'REGULAR',
+    counters: createCounters('gate-s2', 3, 1.0),
+    assignedSpectatorCount: 4000,
+    holdingAreaCapacity: 500,
+    holdingAreaOccupancy: 0,
+    holdingAreaPosition: { x: 80, y: 208 },
+    spawnPosition: { x: 86, y: 214 },
+    maxSafeQueueOccupancy: 400,
+    operationalControlState: 'NORMAL',
+    strictTicketEnforcement: true,
+  },
+  {
+    id: 'gate-s3',
+    name: 'Gate S3',
+    position: { x: 165, y: 195 },
+    width: 7.5,
+    direction: 'ENTRY',
+    scannerCount: 3,
+    operationalScanners: 3,
+    scannerProcessingRatePerMin: 60,
+    scannerProcessingRatePerSec: 1.0,
+    physicalPassageCapacityPerMin: 180,
+    currentQueue: 0,
+    queueWaitTimeSecs: 0,
+    status: 'OPERATIONAL',
+    warningLevel: 'NORMAL',
+    downstreamCorridorId: 'corridor-gate-s3',
+    suggestedAction: 'Monitor regular queue formation',
+    stadiumSide: 'SOUTH',
+    gateType: 'REGULAR',
+    counters: createCounters('gate-s3', 3, 1.0),
+    assignedSpectatorCount: 4000,
+    holdingAreaCapacity: 500,
+    holdingAreaOccupancy: 0,
+    holdingAreaPosition: { x: 180, y: 208 },
+    spawnPosition: { x: 174, y: 214 },
+    maxSafeQueueOccupancy: 400,
+    operationalControlState: 'NORMAL',
+    strictTicketEnforcement: true,
+  },
+
+  // WEST (3 Gates: W1 Regular, W2 Regular, W3 Regular)
+  {
+    id: 'gate-w1',
+    name: 'Gate W1',
+    position: { x: 30, y: 70 },
+    width: 7.5,
+    direction: 'ENTRY',
+    scannerCount: 3,
+    operationalScanners: 3,
+    scannerProcessingRatePerMin: 60,
+    scannerProcessingRatePerSec: 1.0,
+    physicalPassageCapacityPerMin: 180,
+    currentQueue: 0,
+    queueWaitTimeSecs: 0,
+    status: 'OPERATIONAL',
+    warningLevel: 'NORMAL',
+    downstreamCorridorId: 'corridor-gate-w1',
+    suggestedAction: 'Monitor regular queue formation',
+    stadiumSide: 'WEST',
+    gateType: 'REGULAR',
+    counters: createCounters('gate-w1', 3, 1.0),
+    assignedSpectatorCount: 4000,
+    holdingAreaCapacity: 500,
+    holdingAreaOccupancy: 0,
+    holdingAreaPosition: { x: 14, y: 58 },
+    spawnPosition: { x: 8, y: 62 },
+    maxSafeQueueOccupancy: 400,
+    operationalControlState: 'NORMAL',
+    strictTicketEnforcement: true,
+  },
+  {
+    id: 'gate-w2',
+    name: 'Gate W2',
+    position: { x: 25, y: 110 },
+    width: 7.5,
+    direction: 'ENTRY',
+    scannerCount: 3,
+    operationalScanners: 3,
+    scannerProcessingRatePerMin: 60,
+    scannerProcessingRatePerSec: 1.0,
+    physicalPassageCapacityPerMin: 180,
+    currentQueue: 0,
+    queueWaitTimeSecs: 0,
+    status: 'OPERATIONAL',
+    warningLevel: 'NORMAL',
+    downstreamCorridorId: 'corridor-gate-w2',
+    suggestedAction: 'Monitor regular queue formation',
+    stadiumSide: 'WEST',
+    gateType: 'REGULAR',
+    counters: createCounters('gate-w2', 3, 1.0),
+    assignedSpectatorCount: 4000,
+    holdingAreaCapacity: 500,
+    holdingAreaOccupancy: 0,
+    holdingAreaPosition: { x: 8, y: 110 },
+    spawnPosition: { x: 5, y: 110 },
+    maxSafeQueueOccupancy: 400,
+    operationalControlState: 'NORMAL',
+    strictTicketEnforcement: true,
+  },
+  {
+    id: 'gate-w3',
+    name: 'Gate W3',
+    position: { x: 30, y: 150 },
+    width: 7.5,
+    direction: 'ENTRY',
+    scannerCount: 3,
+    operationalScanners: 3,
+    scannerProcessingRatePerMin: 60,
+    scannerProcessingRatePerSec: 1.0,
+    physicalPassageCapacityPerMin: 180,
+    currentQueue: 0,
+    queueWaitTimeSecs: 0,
+    status: 'OPERATIONAL',
+    warningLevel: 'NORMAL',
+    downstreamCorridorId: 'corridor-gate-w3',
+    suggestedAction: 'Monitor regular queue formation',
+    stadiumSide: 'WEST',
+    gateType: 'REGULAR',
+    counters: createCounters('gate-w3', 3, 1.0),
+    assignedSpectatorCount: 4000,
+    holdingAreaCapacity: 500,
+    holdingAreaOccupancy: 0,
+    holdingAreaPosition: { x: 14, y: 162 },
+    spawnPosition: { x: 8, y: 158 },
+    maxSafeQueueOccupancy: 400,
+    operationalControlState: 'NORMAL',
+    strictTicketEnforcement: true,
+  },
+];
 
 // Zones
 const zones: Zone[] = [
@@ -495,15 +826,15 @@ const approachRoutes: ApproachRoute[] = [
     id: 'route-cubbon',
     name: "Cubbon Road Arterial (North Approach)",
     startPoint: { x: 130, y: 5 },
-    entryGateIds: ['gate-1', 'gate-2', 'gate-3', 'gate-4', 'gate-5'],
-    sharePercentage: 35,
+    entryGateIds: ['gate-n1', 'gate-n2', 'gate-n3'],
+    sharePercentage: 25,
     width: 14,
   },
   {
     id: 'route-queens',
     name: "Queen's Road Corridor (West Approach)",
     startPoint: { x: 5, y: 110 },
-    entryGateIds: ['gate-6', 'gate-7', 'gate-8', 'gate-9', 'gate-10'],
+    entryGateIds: ['gate-w1', 'gate-w2', 'gate-w3'],
     sharePercentage: 25,
     width: 12,
   },
@@ -511,16 +842,16 @@ const approachRoutes: ApproachRoute[] = [
     id: 'route-mg-road',
     name: "MG Road & Metro Station (South Approach)",
     startPoint: { x: 130, y: 215 },
-    entryGateIds: ['gate-11', 'gate-12', 'gate-13', 'gate-14', 'gate-15', 'gate-16'],
-    sharePercentage: 30,
+    entryGateIds: ['gate-s1', 'gate-s2', 'gate-s3'],
+    sharePercentage: 25,
     width: 16,
   },
   {
     id: 'route-kasturba',
     name: "Kasturba Road Axis (East Approach)",
     startPoint: { x: 255, y: 110 },
-    entryGateIds: ['gate-17', 'gate-18', 'gate-19', 'gate-20', 'gate-21'],
-    sharePercentage: 10,
+    entryGateIds: ['gate-e1', 'gate-e2', 'gate-e3'],
+    sharePercentage: 25,
     width: 10,
   },
 ];
@@ -529,10 +860,10 @@ export const CHINNASWAMY_STADIUM_PROFILE: Venue = {
   id: 'chinnaswamy-stadium',
   name: 'Chinnaswamy Stadium — Hypothetical Crowd Surge Scenario',
   description:
-    'Illustrative 2D digital twin model configured with 21 perimeter gates, external arterial roads, and concourses for pre-event crowd management testing.',
+    'Illustrative 2D digital twin model configured with exactly 12 operationally modelled gates (3 per side), external arterial roads, and concourses for pre-event crowd management testing.',
   dimensions: { width: 260, height: 220 },
   seatingCapacity: 40000, // ICC official listed seating capacity
-  planningCapacity: 35000, // Explicitly marked as scenario planning limit
+  planningCapacity: 40000, // 10 regular gates @ 4,000 spectators = 40,000 capacity
   gates,
   zones,
   corridors,
@@ -554,7 +885,7 @@ export const CHINNASWAMY_STADIUM_PROFILE: Venue = {
   approachRoutes,
   sourceAttribution: {
     text:
-      'ICC official records list M. Chinnaswamy Stadium seating capacity as 40,000. Public reporting concerning the June 4, 2025 RCB victory-celebration tragedy cited an event planning capacity of ~35,000 and court documentation identified 21 perimeter stadium gates. This digital twin provides a pre-event planning and counterfactual lab model; gate capacities and processing rates are configurable model assumptions.',
+      'ICC official records list M. Chinnaswamy Stadium seating capacity as 40,000. This digital twin model features 12 operationally modelled gates (3 per side: North, East, South, West) with strict ticket restrictions, 3 scanner counters per regular entrance (nominal 180 persons/min throughput), and dedicated holding areas for pre-event crowd safety planning.',
     links: [
       {
         label: 'ICC Venue Guide: M. Chinnaswamy Stadium',
@@ -567,4 +898,15 @@ export const CHINNASWAMY_STADIUM_PROFILE: Venue = {
     ],
   },
 };
+
+export function getGateSpawnPoint(gate: Gate, cx: number = 130, cy: number = 110): Vector2D {
+  if (gate.spawnPosition) return gate.spawnPosition;
+  const dx = gate.position.x - cx;
+  const dy = gate.position.y - cy;
+  const len = Math.sqrt(dx * dx + dy * dy) || 1;
+  return {
+    x: Math.round(gate.position.x + (dx / len) * 22),
+    y: Math.round(gate.position.y + (dy / len) * 22),
+  };
+}
 

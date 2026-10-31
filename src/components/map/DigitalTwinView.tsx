@@ -24,9 +24,13 @@ import {
   CheckCircle2,
   Clock,
   ArrowRight,
+  ArrowLeft,
+  Shuffle,
+  GitBranch,
   TrendingUp,
   TrendingDown,
   RefreshCw,
+  Box,
 } from 'lucide-react';
 import { StadiumSide, GateRoutingPolicy, ArrivalPatternType } from '../../types';
 import { useSimulationStore, SIDE_GATES } from '../../store/simulationStore';
@@ -49,6 +53,7 @@ export const DigitalTwinView: React.FC = () => {
     selectedZoneId,
     setSelectedGateId,
     setSelectedZoneId,
+    setActiveTab,
     updateGate,
     updateZone,
     incidents,
@@ -73,6 +78,14 @@ export const DigitalTwinView: React.FC = () => {
     speedMultiplier,
     setSpeedMultiplier,
     simTimeSecs,
+    toggleCounter,
+    setCounterServiceRate,
+    setGateArrivalRate,
+    failCounters,
+    recoverCounter,
+    restoreAllCounters,
+    setGateLaneBalancingEnabled,
+    setupMultiGateCongestionDemo,
   } = useSimulationStore();
 
   const [activeSideTab, setActiveSideTab] = useState<'CONTROLS' | 'METRICS' | 'LOGS'>('CONTROLS');
@@ -113,18 +126,20 @@ export const DigitalTwinView: React.FC = () => {
     };
   }, [currentVenue.id]);
 
-  // Auto-focus camera when side or gates change
+  // Auto-focus camera when selected gate, focused side, or gates change
   useEffect(() => {
     if (!rendererRef.current || !canvasRef.current) return;
     const rect = canvasRef.current.parentElement?.getBoundingClientRect();
     if (!rect) return;
 
-    if (focusedSide !== 'ALL' && selectedGateIds.length > 0) {
+    if (selectedGateId) {
+      rendererRef.current.fitToGateArea([selectedGateId], currentVenue, rect.width, rect.height);
+    } else if (focusedSide !== 'ALL' && selectedGateIds.length > 0) {
       rendererRef.current.fitToGateArea(selectedGateIds, currentVenue, rect.width, rect.height);
     } else {
       rendererRef.current.fitToView(currentVenue, rect.width, rect.height);
     }
-  }, [focusedSide, selectedGateIds, currentVenue.id]);
+  }, [selectedGateId, focusedSide, selectedGateIds, currentVenue.id]);
 
   // Render loop
   useEffect(() => {
@@ -132,6 +147,10 @@ export const DigitalTwinView: React.FC = () => {
 
     const renderLoop = () => {
       if (rendererRef.current && canvasRef.current) {
+        const effectiveFocusedIds = selectedGateId
+          ? [selectedGateId]
+          : (focusedSide !== 'ALL' && selectedGateIds.length > 0 ? selectedGateIds : undefined);
+
         rendererRef.current.render(
           engine.state.venue,
           engine.state.agents,
@@ -141,7 +160,7 @@ export const DigitalTwinView: React.FC = () => {
           selectedZoneId,
           engine.state.incidents,
           layers.spatialComparison ? activeComparison?.zoneComparisons : null,
-          selectedGateIds
+          effectiveFocusedIds
         );
       }
       animId = requestAnimationFrame(renderLoop);
@@ -190,6 +209,7 @@ export const DigitalTwinView: React.FC = () => {
       if (clickedGate) {
         setSelectedGateId(clickedGate.id);
         setSelectedZoneId(null);
+        setActiveTab('gate-detail');
         return;
       }
 
@@ -276,6 +296,34 @@ export const DigitalTwinView: React.FC = () => {
   const totalProcessingAgents = activeAgents.filter((a) => a.state === 'PROCESSING').length;
   const totalWaitingOutside = totalApproaching + totalQueuingAgents;
 
+  const summary = engine.getSummary();
+  const totalRedirected = summary.totalRedirectedCount || engine.totalRedirectedPedestrians;
+  const unavailableGatesCount =
+    summary.unavailableGatesCount !== undefined
+      ? summary.unavailableGatesCount
+      : currentVenue.gates.filter(
+          (g) =>
+            g.direction === 'CLOSED' ||
+            g.status === 'TEMPORARILY_CLOSED' ||
+            g.operationalScanners === 0 ||
+            g.status === 'UNAVAILABLE'
+        ).length;
+  const totalVenueCap = currentVenue.gates.reduce(
+    (sum, g) =>
+      sum +
+      (g.direction === 'CLOSED' || g.status === 'TEMPORARILY_CLOSED' || g.operationalScanners === 0
+        ? 0
+        : (g.effectiveCapacityPerMin || g.operationalScanners * (g.scannerProcessingRatePerMin || 60))),
+    0
+  );
+  const activeDemand = focusedSide !== 'ALL' ? gateSideConfig.inflowRatePerMin : (summary.arrivalRatePerMin || 300);
+  const demandRatio =
+    summary.demandToCapacityRatio !== undefined
+      ? summary.demandToCapacityRatio
+      : totalVenueCap > 0
+        ? activeDemand / totalVenueCap
+        : 0;
+
   return (
     <div className="relative w-full h-[calc(100vh-4rem)] bg-navy-950 overflow-hidden flex flex-col">
       {/* Stadium Side & Focused Gate-Side Simulation Selector Bar */}
@@ -302,7 +350,7 @@ export const DigitalTwinView: React.FC = () => {
               }`}
             >
               <Maximize2 className="w-3 h-3" />
-              <span>Full Stadium (21 Gates)</span>
+              <span>Full Stadium (12 Gates)</span>
             </button>
 
             <button
@@ -313,29 +361,7 @@ export const DigitalTwinView: React.FC = () => {
                   : 'text-slate-400 hover:text-slate-200'
               }`}
             >
-              North (Gates 1-5)
-            </button>
-
-            <button
-              onClick={() => setFocusedSide('WEST')}
-              className={`px-3 py-1 rounded-lg font-bold transition ${
-                focusedSide === 'WEST'
-                  ? 'bg-indigo-600 text-white shadow-sm'
-                  : 'text-slate-400 hover:text-slate-200'
-              }`}
-            >
-              West (Gates 6-10)
-            </button>
-
-            <button
-              onClick={() => setFocusedSide('SOUTH')}
-              className={`px-3 py-1 rounded-lg font-bold transition ${
-                focusedSide === 'SOUTH'
-                  ? 'bg-purple-600 text-white shadow-sm'
-                  : 'text-slate-400 hover:text-slate-200'
-              }`}
-            >
-              South (Gates 11-16)
+              North (N1-N3)
             </button>
 
             <button
@@ -346,9 +372,46 @@ export const DigitalTwinView: React.FC = () => {
                   : 'text-slate-400 hover:text-slate-200'
               }`}
             >
-              East (Gates 17-21)
+              East (E1-E3)
+            </button>
+
+            <button
+              onClick={() => setFocusedSide('SOUTH')}
+              className={`px-3 py-1 rounded-lg font-bold transition ${
+                focusedSide === 'SOUTH'
+                  ? 'bg-purple-600 text-white shadow-sm'
+                  : 'text-slate-400 hover:text-slate-200'
+              }`}
+            >
+              South (S1-S3)
+            </button>
+
+            <button
+              onClick={() => setFocusedSide('WEST')}
+              className={`px-3 py-1 rounded-lg font-bold transition ${
+                focusedSide === 'WEST'
+                  ? 'bg-indigo-600 text-white shadow-sm'
+                  : 'text-slate-400 hover:text-slate-200'
+              }`}
+            >
+              West (W1-W3)
             </button>
           </div>
+
+          <button
+            onClick={() => {
+              setupMultiGateCongestionDemo();
+              if (rendererRef.current && canvasRef.current) {
+                const rect = canvasRef.current.parentElement?.getBoundingClientRect();
+                if (rect) rendererRef.current.fitToView(currentVenue, rect.width, rect.height);
+              }
+            }}
+            className="px-3 py-1 bg-gradient-to-r from-amber-600 via-rose-600 to-cyan-600 hover:from-amber-500 hover:to-cyan-500 text-white rounded-lg font-bold shadow-md flex items-center gap-1.5 transition text-xs shrink-0"
+            title="Launch Multi-Gate Crowd Congestion Demo: E2 (240 p/m) vs E3 (60 p/m)"
+          >
+            <TrendingUp className="w-3.5 h-3.5 text-amber-200" />
+            <span>Launch Congestion Demo</span>
+          </button>
         </div>
 
         {/* Focused Gate Controls & Return to Full Stadium Button */}
@@ -410,6 +473,55 @@ export const DigitalTwinView: React.FC = () => {
             {isRunning && !isPaused ? <Pause className="w-3 h-3" /> : <Play className="w-3 h-3" />}
             <span>{isRunning && !isPaused ? 'Pause' : isRunning ? 'Resume' : 'Run'}</span>
           </button>
+        </div>
+      </div>
+
+      {/* Real-time Dynamic Rerouting & Capacity Intelligence Sub-bar */}
+      <div className="bg-navy-950/95 border-b border-navy-800 px-4 py-1.5 flex flex-wrap items-center justify-between gap-2 text-xs shrink-0 z-10 shadow-sm backdrop-blur-sm">
+        <div className="flex items-center gap-3">
+          {unavailableGatesCount > 0 ? (
+            <div className="flex items-center gap-1.5 px-2.5 py-0.5 rounded-lg bg-red-950/70 border border-red-800/80 text-red-300 font-bold text-[11px] animate-pulse">
+              <AlertTriangle className="w-3.5 h-3.5 text-red-400" />
+              <span>{unavailableGatesCount} Gate(s) Offline — Automatic Rerouting Active</span>
+            </div>
+          ) : (
+            <div className="flex items-center gap-1.5 px-2.5 py-0.5 rounded-lg bg-emerald-950/60 border border-emerald-800/70 text-emerald-300 font-bold text-[11px]">
+              <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
+              <span>All Gates Operational</span>
+            </div>
+          )}
+
+          <div className="flex items-center gap-2 font-mono text-[11px]">
+            <span className="text-slate-400">Redirected Crowd:</span>
+            <span className="font-bold text-cyan-400">{(totalRedirected || 0).toLocaleString()} ppl</span>
+          </div>
+
+          <div className="hidden sm:flex items-center gap-2 font-mono text-[11px]">
+            <span className="text-slate-400">Total Processing Cap:</span>
+            <span className="font-bold text-emerald-400">{totalVenueCap.toLocaleString()} ppl/min</span>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-3">
+          <div className="flex items-center gap-1.5 font-mono text-[11px]">
+            <span className="text-slate-400">Demand / Capacity:</span>
+            <span
+              className={`font-extrabold px-1.5 py-0.5 rounded border ${
+                demandRatio > 1.2
+                  ? 'bg-rose-950/80 border-rose-700 text-rose-300'
+                  : demandRatio > 0.9
+                    ? 'bg-amber-950/80 border-amber-700 text-amber-300'
+                    : 'bg-emerald-950/80 border-emerald-700 text-emerald-300'
+              }`}
+            >
+              {demandRatio.toFixed(2)}x
+            </span>
+            {demandRatio > 1.0 && (
+              <span className="text-[10px] text-amber-400/90 font-sans hidden md:inline">
+                (Demand exceeds capacity: queues will grow)
+              </span>
+            )}
+          </div>
         </div>
       </div>
 
@@ -552,6 +664,73 @@ export const DigitalTwinView: React.FC = () => {
             )}
           </div>
         </div>
+
+        {/* Expanded Gate Architectural View Canvas Banner */}
+        {selectedGate && (
+          <div className="absolute top-4 left-4 z-20 bg-navy-900/95 backdrop-blur-md border border-cyan-500/50 rounded-xl px-4 py-2.5 shadow-2xl flex flex-wrap items-center gap-3">
+            <button
+              onClick={() => {
+                setSelectedGateId(null);
+                if (rendererRef.current && canvasRef.current) {
+                  const rect = canvasRef.current.parentElement?.getBoundingClientRect();
+                  if (rect) rendererRef.current.fitToView(currentVenue, rect.width, rect.height);
+                }
+              }}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-cyan-600 hover:bg-cyan-500 text-white font-bold text-xs shadow transition cursor-pointer"
+            >
+              <ArrowLeft className="w-3.5 h-3.5" />
+              <span>Return to Full Stadium Twin</span>
+            </button>
+
+            <div className="h-6 w-px bg-navy-700 hidden sm:block" />
+
+            <div>
+              <div className="flex items-center gap-2">
+                <span className="font-extrabold text-white text-sm">
+                  {selectedGate.name} Architecture
+                </span>
+                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-cyan-950 text-cyan-300 border border-cyan-700">
+                  {selectedGate.stadiumSide || 'SIDE'}
+                </span>
+                <span
+                  className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${
+                    selectedGate.status === 'OPERATIONAL'
+                      ? 'bg-emerald-950 text-emerald-300 border-emerald-700'
+                      : 'bg-rose-950 text-rose-300 border-rose-700'
+                  }`}
+                >
+                  {selectedGate.status}
+                </span>
+              </div>
+            </div>
+
+            {/* Quick Gate Switcher Pills */}
+            <div className="h-6 w-px bg-navy-700 hidden md:block" />
+            <div className="flex items-center gap-1 flex-wrap">
+              <span className="text-[10px] text-slate-400 uppercase font-semibold hidden md:inline">Switch:</span>
+              {['gate-n2', 'gate-n3', 'gate-e1', 'gate-e2', 'gate-e3', 'gate-s2', 'gate-s3', 'gate-w1', 'gate-w2', 'gate-w3'].map((gid) => {
+                const g = currentVenue.gates.find((x) => x.id === gid);
+                if (!g) return null;
+                const isSelected = selectedGateId === gid;
+                return (
+                  <button
+                    key={gid}
+                    onClick={() => {
+                      setSelectedGateId(gid);
+                    }}
+                    className={`px-2 py-0.5 rounded text-[11px] font-mono font-bold transition border ${
+                      isSelected
+                        ? 'bg-cyan-500 text-navy-950 border-cyan-300 shadow-md'
+                        : 'bg-navy-950 text-slate-300 border-navy-700 hover:border-slate-500'
+                    }`}
+                  >
+                    {g.name.replace('Gate ', '')}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        )}
 
         {/* Bottom Legend Overlay */}
         <div className="absolute bottom-4 left-4 bg-navy-850/85 backdrop-blur-md border border-navy-700 rounded-xl p-2.5 shadow-xl text-xs flex items-center gap-4 text-slate-300">
@@ -1304,41 +1483,262 @@ export const DigitalTwinView: React.FC = () => {
 
               {/* Editable Gate Parameters */}
               <div className="space-y-3 bg-navy-900/60 p-3 rounded-xl border border-navy-700 text-xs">
-                <span className="font-bold text-slate-300 block mb-1">Operational Parameters</span>
+                <span className="font-bold text-slate-300 block mb-1">Operational & Arrival Parameters</span>
 
-                <div>
-                  <label className="text-slate-400 block mb-1">
-                    Scanner Lanes ({selectedGate.operationalScanners}/{selectedGate.scannerCount} operational)
-                  </label>
-                  <input
-                    type="range"
-                    min="1"
-                    max="10"
-                    value={selectedGate.scannerCount}
-                    onChange={(e) =>
-                      updateGate(selectedGate.id, {
-                        scannerCount: Number(e.target.value),
-                        operationalScanners: Math.min(selectedGate.operationalScanners, Number(e.target.value)),
-                      })
-                    }
-                    className="w-full accent-cyan-500"
-                  />
+                {/* Gate-Specific Independent Arrival Rate */}
+                <div className="bg-navy-950 p-2.5 rounded-lg border border-navy-800 space-y-2">
+                  <div className="flex justify-between items-center">
+                    <span className="text-slate-300 font-semibold">Independent Arrival Rate</span>
+                    <span className="font-mono font-bold text-cyan-300">
+                      {selectedGate.arrivalRatePerMin ?? 120} ppl/min
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <button
+                      onClick={() => setGateArrivalRate(selectedGate.id, Math.max(0, (selectedGate.arrivalRatePerMin ?? 120) - 30))}
+                      className="px-2 py-1 rounded bg-navy-800 hover:bg-navy-700 border border-navy-700 text-slate-300 font-bold"
+                    >
+                      -30
+                    </button>
+                    <button
+                      onClick={() => setGateArrivalRate(selectedGate.id, (selectedGate.arrivalRatePerMin ?? 120) + 30)}
+                      className="px-2 py-1 rounded bg-navy-800 hover:bg-navy-700 border border-navy-700 text-slate-300 font-bold"
+                    >
+                      +30
+                    </button>
+                    <button
+                      onClick={() => setGateArrivalRate(selectedGate.id, 240)}
+                      className="px-2 py-1 rounded bg-rose-950/80 hover:bg-rose-900 border border-rose-700/60 text-rose-300 font-semibold text-[10px]"
+                    >
+                      Surge (240)
+                    </button>
+                    <button
+                      onClick={() => setGateArrivalRate(selectedGate.id, 60)}
+                      className="px-2 py-1 rounded bg-emerald-950/80 hover:bg-emerald-900 border border-emerald-700/60 text-emerald-300 font-semibold text-[10px]"
+                    >
+                      Free (60)
+                    </button>
+                  </div>
                 </div>
 
-                <div>
-                  <label className="text-slate-400 block mb-1">
-                    Service Rate ({selectedGate.scannerProcessingRatePerMin} people/scanner/min)
-                  </label>
-                  <input
-                    type="range"
-                    min="5"
-                    max="25"
-                    value={selectedGate.scannerProcessingRatePerMin}
-                    onChange={(e) =>
-                      updateGate(selectedGate.id, { scannerProcessingRatePerMin: Number(e.target.value) })
-                    }
-                    className="w-full accent-cyan-500"
-                  />
+                {/* 3 Distinct Queue Lanes & Intelligent Lane Balancing */}
+                {selectedGate.counters && selectedGate.counters.length > 0 && (
+                  <div className="bg-navy-950 p-2.5 rounded-lg border border-navy-800 space-y-3">
+                    {/* Header & Balancing Mode Toggle */}
+                    <div className="flex justify-between items-center border-b border-navy-800 pb-2">
+                      <div className="flex items-center gap-1.5">
+                        <Shuffle className="w-3.5 h-3.5 text-amber-400" />
+                        <div>
+                          <span className="text-slate-200 font-bold block text-xs">Intelligent Lane Balancing</span>
+                          <span className="text-[10px] text-slate-400">Dynamic workload & wait time optimization</span>
+                        </div>
+                      </div>
+                      <button
+                        onClick={() =>
+                          setGateLaneBalancingEnabled(
+                            selectedGate.id,
+                            selectedGate.laneBalancingEnabled === false
+                          )
+                        }
+                        className={`px-2 py-0.5 rounded text-[10px] font-bold border transition ${
+                          selectedGate.laneBalancingEnabled !== false
+                            ? 'bg-emerald-950 text-emerald-300 border-emerald-700 hover:bg-emerald-900'
+                            : 'bg-navy-900 text-slate-400 border-navy-700 hover:text-slate-200'
+                        }`}
+                      >
+                        {selectedGate.laneBalancingEnabled !== false ? 'ACTIVE' : 'OFF'}
+                      </button>
+                    </div>
+
+                    <div className="flex justify-between text-[11px] text-slate-400">
+                      <span>Total Dynamic Lane Switches:</span>
+                      <span className="font-mono font-bold text-amber-400">{selectedGate.totalLaneSwitches || 0}</span>
+                    </div>
+
+                    {/* Three Distinct Lane Metrics Cards */}
+                    <div className="space-y-2">
+                      {selectedGate.counters.map((c, lIdx) => {
+                        const lMetric = (selectedGate.laneMetrics && selectedGate.laneMetrics[lIdx]) || null;
+                        const isOp = c.status === 'OPERATIONAL';
+                        const queueCount = lMetric ? lMetric.waitingCount : (c.queueCount ?? 0);
+                        const procCount = lMetric ? lMetric.processingCount : (c.isProcessing ? 1 : 0);
+                        const rateSec = lMetric ? lMetric.serviceRatePerSec : (c.serviceRatePerSec || 1.0);
+                        const rateMin = lMetric ? lMetric.serviceRatePerMin : Math.round(rateSec * 60);
+                        const waitSecs = lMetric ? lMetric.estimatedWaitSecs : (isOp ? Math.round(queueCount / rateSec) : 999);
+                        const occPct = lMetric ? lMetric.laneOccupancyPercent : Math.min(100, Math.round((queueCount / 40) * 100));
+                        const cong = lMetric ? lMetric.congestionStatus : (queueCount >= 35 ? 'OVERFLOW' : queueCount >= 20 ? 'CONGESTED' : queueCount >= 8 ? 'MODERATE' : 'OPTIMAL');
+
+                        return (
+                          <div
+                            key={c.id}
+                            className={`p-2.5 rounded-lg border text-[11px] space-y-1.5 transition ${
+                              isOp
+                                ? 'bg-navy-900/90 border-navy-700'
+                                : 'bg-red-950/20 border-red-800/60'
+                            }`}
+                          >
+                            <div className="flex justify-between items-center">
+                              <div className="flex items-center gap-1.5">
+                                <span
+                                  className={`w-2.5 h-2.5 rounded-full ${
+                                    isOp
+                                      ? c.isProcessing
+                                        ? 'bg-cyan-400 shadow-sm animate-pulse'
+                                        : 'bg-emerald-400'
+                                      : 'bg-rose-500 animate-pulse'
+                                  }`}
+                                />
+                                <span className="font-bold text-slate-100">
+                                  Lane {lIdx + 1} — Counter {lIdx + 1}
+                                </span>
+                              </div>
+
+                              <div className="flex items-center gap-1.5">
+                                <span
+                                  className={`px-1.5 py-0.5 rounded text-[9px] font-bold border ${
+                                    cong === 'OVERFLOW'
+                                      ? 'bg-red-950 text-red-300 border-red-700 animate-pulse'
+                                      : cong === 'CONGESTED'
+                                        ? 'bg-amber-950 text-amber-300 border-amber-700'
+                                        : cong === 'MODERATE'
+                                          ? 'bg-cyan-950 text-cyan-300 border-cyan-700'
+                                          : 'bg-emerald-950 text-emerald-300 border-emerald-700'
+                                  }`}
+                                >
+                                  {cong}
+                                </span>
+
+                                <button
+                                  onClick={() => toggleCounter(selectedGate.id, c.id)}
+                                  className={`px-1.5 py-0.5 rounded text-[10px] font-bold border transition ${
+                                    isOp
+                                      ? 'bg-rose-950 text-rose-300 border-rose-800 hover:bg-rose-900'
+                                      : 'bg-emerald-950 text-emerald-300 border-emerald-800 hover:bg-emerald-900'
+                                  }`}
+                                >
+                                  {isOp ? 'Fail' : 'Restore'}
+                                </button>
+                              </div>
+                            </div>
+
+                            {/* Lane Metrics Grid */}
+                            <div className="grid grid-cols-3 gap-1 pt-1 text-[10px]">
+                              <div className="bg-navy-950 p-1.5 rounded border border-navy-800">
+                                <span className="text-slate-400 block">Queue</span>
+                                <span className="font-mono font-bold text-amber-300">{queueCount}</span>
+                                {procCount > 0 && <span className="text-cyan-400 ml-1 font-mono">+{procCount}</span>}
+                              </div>
+                              <div className="bg-navy-950 p-1.5 rounded border border-navy-800">
+                                <span className="text-slate-400 block">Rate</span>
+                                <span className="font-mono font-bold text-slate-200">{rateSec} p/s</span>
+                                <span className="text-slate-400 block text-[9px]">({rateMin} p/m)</span>
+                              </div>
+                              <div className="bg-navy-950 p-1.5 rounded border border-navy-800">
+                                <span className="text-slate-400 block">Est. Wait</span>
+                                <span className="font-mono font-bold text-amber-400">{isOp ? `~${waitSecs}s` : 'OFFLINE'}</span>
+                              </div>
+                            </div>
+
+                            <div className="flex justify-between items-center text-[10px] text-slate-400 pt-0.5">
+                              <span>Occupancy: {occPct}% (cap 40)</span>
+                              <span>
+                                Admitted:{' '}
+                                <span className="font-mono text-emerald-300 font-bold">
+                                  {c.totalProcessedCount || 0}
+                                </span>
+                              </span>
+                              {lMetric && (
+                                <span>
+                                  Switches: <span className="text-amber-400">+{lMetric.laneSwitchesIn}</span>/
+                                  <span className="text-slate-400">-{lMetric.laneSwitchesOut}</span>
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+
+                    {/* Master Counter Controls */}
+                    <div className="pt-1 border-t border-navy-800">
+                      <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1">
+                        Master Counter Actions
+                      </span>
+                      <div className="grid grid-cols-5 gap-1">
+                        <button
+                          onClick={() => failCounters(selectedGate.id, 1)}
+                          className="py-1 rounded bg-amber-950/70 hover:bg-amber-900 border border-amber-800/60 text-amber-300 text-[9px] font-semibold"
+                        >
+                          Fail C1
+                        </button>
+                        <button
+                          onClick={() => failCounters(selectedGate.id, 2)}
+                          className="py-1 rounded bg-amber-950/70 hover:bg-amber-900 border border-amber-800/60 text-amber-300 text-[9px] font-semibold"
+                        >
+                          Fail C2
+                        </button>
+                        <button
+                          onClick={() => failCounters(selectedGate.id, 3)}
+                          className="py-1 rounded bg-amber-950/70 hover:bg-amber-900 border border-amber-800/60 text-amber-300 text-[9px] font-semibold"
+                        >
+                          Fail C3
+                        </button>
+                        <button
+                          onClick={() => failCounters(selectedGate.id, selectedGate.counters?.length || 3)}
+                          className="py-1 rounded bg-rose-950/70 hover:bg-rose-900 border border-rose-800/60 text-rose-300 text-[9px] font-semibold"
+                        >
+                          Fail All
+                        </button>
+                        <button
+                          onClick={() => restoreAllCounters(selectedGate.id)}
+                          className="py-1 rounded bg-emerald-950/70 hover:bg-emerald-900 border border-emerald-800/60 text-emerald-300 text-[9px] font-semibold"
+                        >
+                          Restore
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Mass-Balance Gate Telemetry Breakdown */}
+                <div className="bg-navy-950 p-2.5 rounded-lg border border-navy-800 space-y-1.5">
+                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block border-b border-navy-800 pb-1">
+                    Gate Mass Conservation Audit
+                  </span>
+                  <div className="grid grid-cols-2 gap-1 text-[11px]">
+                    <div className="flex justify-between">
+                      <span className="text-slate-400">Assigned Quota:</span>
+                      <span className="font-mono text-white">{selectedGate.assignedSpectatorCount || 4000}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-slate-400">Remaining:</span>
+                      <span className="font-mono text-cyan-300">{selectedGate.remainingToArriveCount ?? 4000}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-slate-400">Arrived Outside:</span>
+                      <span className="font-mono text-slate-200">{selectedGate.totalArrivalsCount || 0}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-slate-400">Admitted:</span>
+                      <span className="font-mono text-emerald-300">{selectedGate.admittedCount || selectedGate.totalProcessedCount || 0}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-slate-400">Counter 1 Queue:</span>
+                      <span className="font-mono text-amber-300">{selectedGate.counter1QueueCount ?? (selectedGate.counters?.[0]?.queueCount || 0)}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-slate-400">Counter 2 Queue:</span>
+                      <span className="font-mono text-amber-300">{selectedGate.counter2QueueCount ?? (selectedGate.counters?.[1]?.queueCount || 0)}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-slate-400">Counter 3 Queue:</span>
+                      <span className="font-mono text-amber-300">{selectedGate.counter3QueueCount ?? (selectedGate.counters?.[2]?.queueCount || 0)}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-slate-400">Holding Area:</span>
+                      <span className="font-mono text-purple-300">{selectedGate.inHoldingCount || 0}</span>
+                    </div>
+                  </div>
                 </div>
 
                 <div>
@@ -1357,18 +1757,15 @@ export const DigitalTwinView: React.FC = () => {
                 {/* Tactical Actions */}
                 <div className="pt-2 border-t border-navy-700 flex flex-col gap-1.5">
                   <button
-                    onClick={() =>
-                      updateGate(selectedGate.id, {
-                        operationalScanners: 1,
-                        status: 'SCANNER_FAILURE',
-                        warningLevel: 'HIGH',
-                      })
-                    }
-                    className="w-full py-1.5 rounded-lg bg-amber-950/80 hover:bg-amber-900 border border-amber-700/60 text-amber-200 text-xs font-semibold transition"
+                    onClick={() => {
+                      setSelectedGateId(selectedGate.id);
+                      setActiveTab('gate-detail');
+                    }}
+                    className="w-full py-2 px-3 rounded-lg bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 text-white text-xs font-bold transition flex items-center justify-center gap-2 shadow-lg shadow-cyan-950"
                   >
-                    Simulate Scanner Glitch
+                    <Box className="w-4 h-4" />
+                    Open 3D Gate Simulation View →
                   </button>
-
                   <button
                     onClick={() =>
                       updateGate(selectedGate.id, {

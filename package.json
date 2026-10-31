@@ -10,12 +10,14 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@types/three": "^0.187.0",
     "clsx": "^2.1.1",
     "lucide-react": "^0.453.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "recharts": "^2.13.0",
     "tailwind-merge": "^2.5.4",
+    "three": "file:three-0.187.0.tgz",
     "zustand": "^5.0.0"
   },
   "devDependencies": {
@@ -30,4 +32,3 @@
     "vitest": "^2.1.3"
   }
 }
-

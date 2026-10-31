@@ -36,18 +36,18 @@ describe('Gate-Side Simulation & Live Capacity Engine', () => {
 
   describe('Scenario A: Normal Operation (Capacity > Inflow)', () => {
     it('should drain existing queue and keep queue stable when processing capacity exceeds inflow', () => {
-      const gate1 = engine.state.venue.gates.find((g) => g.id === 'gate-1')!;
+      const gate1 = engine.state.venue.gates.find((g) => g.id === 'gate-n1')!;
       gate1.scannerCount = 4;
       gate1.operationalScanners = 4;
 
       engine.setGateSideConfig({
-        selectedGateIds: ['gate-1'],
+        selectedGateIds: ['gate-n1'],
         inflowRatePerMin: 100,
         processingRatePerSec: 1.0,
         arrivalPattern: 'GRADUAL',
       });
 
-      engine.applyInitialQueue(20, ['gate-1']);
+      engine.applyInitialQueue(20, ['gate-n1']);
       expect(gate1.currentQueue).toBe(20);
 
       engine.start();
@@ -63,18 +63,18 @@ describe('Gate-Side Simulation & Live Capacity Engine', () => {
 
   describe('Scenario B: Inflow Exceeds Capacity', () => {
     it('should accumulate queue when inflow rate is higher than processing capacity', () => {
-      const gate1 = engine.state.venue.gates.find((g) => g.id === 'gate-1')!;
+      const gate1 = engine.state.venue.gates.find((g) => g.id === 'gate-n1')!;
       gate1.scannerCount = 4;
       gate1.operationalScanners = 4;
 
       engine.setGateSideConfig({
-        selectedGateIds: ['gate-1'],
+        selectedGateIds: ['gate-n1'],
         inflowRatePerMin: 360,
         processingRatePerSec: 1.0,
         arrivalPattern: 'GRADUAL',
       });
 
-      engine.applyInitialQueue(10, ['gate-1']);
+      engine.applyInitialQueue(10, ['gate-n1']);
       engine.start();
 
       for (let i = 0; i < 400; i++) {
@@ -88,18 +88,18 @@ describe('Gate-Side Simulation & Live Capacity Engine', () => {
 
   describe('Scenario C: Counter Failure', () => {
     it('should transition from stable to queue accumulation when counters fail', () => {
-      const gate1 = engine.state.venue.gates.find((g) => g.id === 'gate-1')!;
+      const gate1 = engine.state.venue.gates.find((g) => g.id === 'gate-n1')!;
       gate1.scannerCount = 4;
       gate1.operationalScanners = 4;
 
       engine.setGateSideConfig({
-        selectedGateIds: ['gate-1'],
+        selectedGateIds: ['gate-n1'],
         inflowRatePerMin: 200,
         processingRatePerSec: 1.0,
         arrivalPattern: 'GRADUAL',
       });
 
-      engine.applyInitialQueue(10, ['gate-1']);
+      engine.applyInitialQueue(10, ['gate-n1']);
       engine.start();
 
       for (let i = 0; i < 150; i++) {
@@ -123,7 +123,7 @@ describe('Gate-Side Simulation & Live Capacity Engine', () => {
 
   describe('Scenario D: Surge and Recovery', () => {
     it('should build queue during peak surge and clear during recovery window', () => {
-      const gate1 = engine.state.venue.gates.find((g) => g.id === 'gate-1')!;
+      const gate1 = engine.state.venue.gates.find((g) => g.id === 'gate-n1')!;
       gate1.scannerCount = 4;
       gate1.operationalScanners = 4;
 
@@ -131,12 +131,12 @@ describe('Gate-Side Simulation & Live Capacity Engine', () => {
 
       // Phase 1: Surge
       engine.setGateSideConfig({
-        selectedGateIds: ['gate-1'],
+        selectedGateIds: ['gate-n1'],
         inflowRatePerMin: 420,
         processingRatePerSec: 1.0,
         arrivalPattern: 'GRADUAL',
       });
-      engine.applyInitialQueue(20, ['gate-1']);
+      engine.applyInitialQueue(20, ['gate-n1']);
 
       for (let i = 0; i < 250; i++) {
         engine.step(0.1);
@@ -159,17 +159,17 @@ describe('Gate-Side Simulation & Live Capacity Engine', () => {
 
   describe('Scenario E: Gate Closure Handling', () => {
     it('should stop admissions when gate is closed without deleting queued people', () => {
-      const gate1 = engine.state.venue.gates.find((g) => g.id === 'gate-1')!;
+      const gate1 = engine.state.venue.gates.find((g) => g.id === 'gate-n1')!;
       gate1.scannerCount = 4;
       gate1.operationalScanners = 4;
 
       engine.setGateSideConfig({
-        selectedGateIds: ['gate-1'],
+        selectedGateIds: ['gate-n1'],
         inflowRatePerMin: 120,
         processingRatePerSec: 1.0,
       });
 
-      engine.applyInitialQueue(25, ['gate-1']);
+      engine.applyInitialQueue(25, ['gate-n1']);
       engine.start();
 
       gate1.direction = 'CLOSED';
@@ -189,16 +189,16 @@ describe('Gate-Side Simulation & Live Capacity Engine', () => {
 
   describe('Scenario F: Multi-Gate Routing Policies', () => {
     it('should route incoming crowd to the gate with SHORTEST_QUEUE', () => {
-      const g1 = engine.state.venue.gates.find((g) => g.id === 'gate-1')!;
-      const g2 = engine.state.venue.gates.find((g) => g.id === 'gate-2')!;
-      const g3 = engine.state.venue.gates.find((g) => g.id === 'gate-3')!;
+      const g1 = engine.state.venue.gates.find((g) => g.id === 'gate-n1')!;
+      const g2 = engine.state.venue.gates.find((g) => g.id === 'gate-n2')!;
+      const g3 = engine.state.venue.gates.find((g) => g.id === 'gate-n3')!;
 
       g1.currentQueue = 50;
       g2.currentQueue = 5;
       g3.currentQueue = 30;
 
       engine.setGateSideConfig({
-        selectedGateIds: ['gate-1', 'gate-2', 'gate-3'],
+        selectedGateIds: ['gate-n1', 'gate-n2', 'gate-n3'],
         routingPolicy: 'SHORTEST_QUEUE',
         inflowRatePerMin: 120,
         processingRatePerSec: 1.0,
@@ -212,8 +212,8 @@ describe('Gate-Side Simulation & Live Capacity Engine', () => {
     });
 
     it('should route incoming crowd avoiding gates with blocked downstream corridors in ROUTE_AWARE mode', () => {
-      const g1 = engine.state.venue.gates.find((g) => g.id === 'gate-1')!;
-      const g2 = engine.state.venue.gates.find((g) => g.id === 'gate-2')!;
+      const g1 = engine.state.venue.gates.find((g) => g.id === 'gate-n1')!;
+      const g2 = engine.state.venue.gates.find((g) => g.id === 'gate-n2')!;
 
       g1.currentQueue = 10;
       g2.currentQueue = 12;
@@ -224,7 +224,7 @@ describe('Gate-Side Simulation & Live Capacity Engine', () => {
       }
 
       engine.setGateSideConfig({
-        selectedGateIds: ['gate-1', 'gate-2'],
+        selectedGateIds: ['gate-n1', 'gate-n2'],
         routingPolicy: 'ROUTE_AWARE',
         inflowRatePerMin: 120,
         processingRatePerSec: 1.0,
@@ -240,7 +240,7 @@ describe('Gate-Side Simulation & Live Capacity Engine', () => {
 
   describe('Scenario G: Physical Queue Overflow & Spillback', () => {
     it('should track spillback count when queue exceeds queueAreaCapacity', () => {
-      const gate1 = engine.state.venue.gates.find((g) => g.id === 'gate-1')!;
+      const gate1 = engine.state.venue.gates.find((g) => g.id === 'gate-n1')!;
       gate1.queueAreaCapacity = 80;
 
       gate1.currentQueue = 50;
@@ -256,7 +256,7 @@ describe('Gate-Side Simulation & Live Capacity Engine', () => {
 
   describe('Scenario H: Downstream Bottleneck Throttling', () => {
     it('should hold gate release when downstream corridor is blocked to prevent crush hazard', () => {
-      const gate1 = engine.state.venue.gates.find((g) => g.id === 'gate-1')!;
+      const gate1 = engine.state.venue.gates.find((g) => g.id === 'gate-n1')!;
       gate1.operationalScanners = 4;
       gate1.currentQueue = 30;
 
@@ -266,7 +266,7 @@ describe('Gate-Side Simulation & Live Capacity Engine', () => {
       }
 
       engine.setGateSideConfig({
-        selectedGateIds: ['gate-1'],
+        selectedGateIds: ['gate-n1'],
         processingRatePerSec: 1.0,
       });
 
@@ -285,12 +285,12 @@ describe('Gate-Side Simulation & Live Capacity Engine', () => {
   describe('Scenario I: Live Configuration Changes Mid-Simulation', () => {
     it('should update inflow and counter rates mid-run without resetting clock or losing queue', () => {
       engine.setGateSideConfig({
-        selectedGateIds: ['gate-1'],
+        selectedGateIds: ['gate-n1'],
         inflowRatePerMin: 120,
         processingRatePerSec: 1.0,
       });
 
-      engine.applyInitialQueue(15, ['gate-1']);
+      engine.applyInitialQueue(15, ['gate-n1']);
       engine.start();
 
       for (let i = 0; i < 100; i++) {
@@ -312,16 +312,16 @@ describe('Gate-Side Simulation & Live Capacity Engine', () => {
 
   describe('Scenario J: Conservation of People (Mass Balance)', () => {
     it('should conserve total people across states without duplicate IDs or silently dropped agents', () => {
-      const gate1 = engine.state.venue.gates.find((g) => g.id === 'gate-1')!;
+      const gate1 = engine.state.venue.gates.find((g) => g.id === 'gate-n1')!;
       gate1.operationalScanners = 4;
 
       engine.setGateSideConfig({
-        selectedGateIds: ['gate-1'],
+        selectedGateIds: ['gate-n1'],
         inflowRatePerMin: 180,
         processingRatePerSec: 1.0,
       });
 
-      engine.applyInitialQueue(20, ['gate-1']);
+      engine.applyInitialQueue(20, ['gate-n1']);
       engine.start();
 
       for (let i = 0; i < 200; i++) {
@@ -360,7 +360,7 @@ describe('Gate-Side Simulation & Live Capacity Engine', () => {
   describe('Gate Entry Counting & Visual Exit After Entry (12 Requirement Tests)', () => {
     // 1. A pedestrian approaches a gate but does not increase the entry count.
     it('Test 1: should not increase entry count when a pedestrian merely approaches a gate', () => {
-      const gate1 = engine.state.venue.gates.find((g) => g.id === 'gate-1')!;
+      const gate1 = engine.state.venue.gates.find((g) => g.id === 'gate-n1')!;
       gate1.operationalScanners = 4;
       gate1.currentQueue = 0;
       gate1.admittedCount = 0;
@@ -368,7 +368,7 @@ describe('Gate-Side Simulation & Live Capacity Engine', () => {
 
       // Spawn 1 approaching agent far back on approach route
       engine.setGateSideConfig({
-        selectedGateIds: ['gate-1'],
+        selectedGateIds: ['gate-n1'],
         inflowRatePerMin: 60,
       });
 
@@ -379,7 +379,7 @@ describe('Gate-Side Simulation & Live Capacity Engine', () => {
       }
 
       const approachingAgent = engine.state.agents.find(
-        (a) => a.state === 'APPROACHING' && a.targetGateId === 'gate-1'
+        (a) => a.state === 'APPROACHING' && a.targetGateId === 'gate-n1'
       );
       expect(approachingAgent).toBeDefined();
       expect(approachingAgent?.state).toBe('APPROACHING');
@@ -391,13 +391,13 @@ describe('Gate-Side Simulation & Live Capacity Engine', () => {
 
     // 2. A pedestrian waits in the queue without increasing the entry count.
     it('Test 2: should not increase entry count while a pedestrian is waiting in queue', () => {
-      const gate1 = engine.state.venue.gates.find((g) => g.id === 'gate-1')!;
+      const gate1 = engine.state.venue.gates.find((g) => g.id === 'gate-n1')!;
       // Zero scanner throughput so queue cannot process
       gate1.operationalScanners = 0;
       gate1.admittedCount = 0;
       gate1.totalProcessedCount = 0;
 
-      engine.applyInitialQueue(10, ['gate-1']);
+      engine.applyInitialQueue(10, ['gate-n1']);
       expect(gate1.currentQueue).toBe(10);
 
       engine.start();
@@ -414,21 +414,21 @@ describe('Gate-Side Simulation & Live Capacity Engine', () => {
 
     // 3. A pedestrian successfully passes through Gate 1 and increments Gate 1's count exactly once.
     it('Test 3: should increment Gate 1 count exactly once per successful admission', () => {
-      const gate1 = engine.state.venue.gates.find((g) => g.id === 'gate-1')!;
+      const gate1 = engine.state.venue.gates.find((g) => g.id === 'gate-n1')!;
       gate1.operationalScanners = 1;
       gate1.scannerProcessingRatePerSec = 1.0;
       gate1.admittedCount = 0;
       gate1.totalProcessedCount = 0;
 
       engine.setGateSideConfig({
-        selectedGateIds: ['gate-1'],
+        selectedGateIds: ['gate-n1'],
         inflowRatePerMin: 0,
         processingRatePerSec: 1.0,
       });
 
       // Apply initial queue of exactly 1 person
-      engine.applyInitialQueue(1, ['gate-1']);
-      const agent = engine.state.agents.find((a) => a.targetGateId === 'gate-1')!;
+      engine.applyInitialQueue(1, ['gate-n1']);
+      const agent = engine.state.agents.find((a) => a.targetGateId === 'gate-n1')!;
       expect(agent).toBeDefined();
 
       engine.start();
@@ -453,17 +453,17 @@ describe('Gate-Side Simulation & Live Capacity Engine', () => {
 
     // 4. The admitted pedestrian disappears from the external-crowd rendering.
     it('Test 4: should mark admitted pedestrian as ADMITTED so they are excluded from outside rendering', () => {
-      const gate1 = engine.state.venue.gates.find((g) => g.id === 'gate-1')!;
+      const gate1 = engine.state.venue.gates.find((g) => g.id === 'gate-n1')!;
       gate1.operationalScanners = 2;
       gate1.scannerProcessingRatePerSec = 2.0;
 
       engine.setGateSideConfig({
-        selectedGateIds: ['gate-1'],
+        selectedGateIds: ['gate-n1'],
         inflowRatePerMin: 0,
         processingRatePerSec: 2.0,
       });
 
-      engine.applyInitialQueue(3, ['gate-1']);
+      engine.applyInitialQueue(3, ['gate-n1']);
       engine.start();
 
       // Step until all 3 are processed
@@ -491,16 +491,16 @@ describe('Gate-Side Simulation & Live Capacity Engine', () => {
 
     // 5. The admitted pedestrian no longer contributes to the external queue or outside density.
     it('Test 5: should exclude admitted pedestrian from external queue and zone density', () => {
-      const gate1 = engine.state.venue.gates.find((g) => g.id === 'gate-1')!;
+      const gate1 = engine.state.venue.gates.find((g) => g.id === 'gate-n1')!;
       gate1.operationalScanners = 2;
 
       engine.setGateSideConfig({
-        selectedGateIds: ['gate-1'],
+        selectedGateIds: ['gate-n1'],
         inflowRatePerMin: 0,
         processingRatePerSec: 2.0,
       });
 
-      engine.applyInitialQueue(5, ['gate-1']);
+      engine.applyInitialQueue(5, ['gate-n1']);
       expect(gate1.currentQueue).toBe(5);
 
       engine.start();
@@ -519,17 +519,17 @@ describe('Gate-Side Simulation & Live Capacity Engine', () => {
 
     // 6. Other pedestrians continue moving and queuing normally.
     it('Test 6: should allow subsequent queuing pedestrians to step forward when a front pedestrian is admitted', () => {
-      const gate1 = engine.state.venue.gates.find((g) => g.id === 'gate-1')!;
+      const gate1 = engine.state.venue.gates.find((g) => g.id === 'gate-n1')!;
       gate1.operationalScanners = 1;
       gate1.scannerProcessingRatePerSec = 1.0;
 
       engine.setGateSideConfig({
-        selectedGateIds: ['gate-1'],
+        selectedGateIds: ['gate-n1'],
         processingRatePerSec: 1.0,
       });
 
       // Queue 2 people
-      engine.applyInitialQueue(2, ['gate-1']);
+      engine.applyInitialQueue(2, ['gate-n1']);
       const agentA = engine.state.agents[0];
       const agentB = engine.state.agents[1];
 
@@ -555,15 +555,15 @@ describe('Gate-Side Simulation & Live Capacity Engine', () => {
 
     // 7. A pedestrian admitted through Gate 2 increments Gate 2's count, not Gate 1's.
     it('Test 7: should increment Gate 2 count and NOT Gate 1 count when an agent enters Gate 2', () => {
-      const gate1 = engine.state.venue.gates.find((g) => g.id === 'gate-1')!;
-      const gate2 = engine.state.venue.gates.find((g) => g.id === 'gate-2')!;
+      const gate1 = engine.state.venue.gates.find((g) => g.id === 'gate-n1')!;
+      const gate2 = engine.state.venue.gates.find((g) => g.id === 'gate-n2')!;
 
       gate1.operationalScanners = 0; // gate 1 cannot process
       gate2.operationalScanners = 2; // gate 2 can process
       gate2.scannerProcessingRatePerSec = 1.0;
 
-      engine.applyInitialQueue(5, ['gate-1']);
-      engine.applyInitialQueue(3, ['gate-2']);
+      engine.applyInitialQueue(5, ['gate-n1']);
+      engine.applyInitialQueue(3, ['gate-n2']);
 
       engine.start();
       for (let i = 0; i < 20; i++) {
@@ -578,11 +578,11 @@ describe('Gate-Side Simulation & Live Capacity Engine', () => {
 
     // 8. A closed gate does not admit pedestrians.
     it('Test 8: should not admit pedestrians when gate is closed', () => {
-      const gate1 = engine.state.venue.gates.find((g) => g.id === 'gate-1')!;
+      const gate1 = engine.state.venue.gates.find((g) => g.id === 'gate-n1')!;
       gate1.operationalScanners = 4;
       gate1.direction = 'CLOSED';
 
-      engine.applyInitialQueue(15, ['gate-1']);
+      engine.applyInitialQueue(15, ['gate-n1']);
       engine.start();
 
       for (let i = 0; i < 40; i++) {
@@ -595,11 +595,11 @@ describe('Gate-Side Simulation & Live Capacity Engine', () => {
 
     // 9. A scanner failure does not incorrectly count unsuccessful admissions.
     it('Test 9: should not count admissions during scanner failure with 0 operational scanners', () => {
-      const gate1 = engine.state.venue.gates.find((g) => g.id === 'gate-1')!;
+      const gate1 = engine.state.venue.gates.find((g) => g.id === 'gate-n1')!;
       gate1.operationalScanners = 0;
       gate1.status = 'SCANNER_FAILURE';
 
-      engine.applyInitialQueue(12, ['gate-1']);
+      engine.applyInitialQueue(12, ['gate-n1']);
       engine.start();
 
       for (let i = 0; i < 30; i++) {
@@ -613,9 +613,9 @@ describe('Gate-Side Simulation & Live Capacity Engine', () => {
 
     // 10. The total admission count equals the sum of the individual gate counts for the same selected simulation scope.
     it('Test 10: should ensure total admission count equals the exact sum of individual gate counts', () => {
-      const g1 = engine.state.venue.gates.find((g) => g.id === 'gate-1')!;
-      const g2 = engine.state.venue.gates.find((g) => g.id === 'gate-2')!;
-      const g3 = engine.state.venue.gates.find((g) => g.id === 'gate-3')!;
+      const g1 = engine.state.venue.gates.find((g) => g.id === 'gate-n1')!;
+      const g2 = engine.state.venue.gates.find((g) => g.id === 'gate-n2')!;
+      const g3 = engine.state.venue.gates.find((g) => g.id === 'gate-n3')!;
 
       g1.operationalScanners = 2;
       g2.operationalScanners = 2;
@@ -624,9 +624,9 @@ describe('Gate-Side Simulation & Live Capacity Engine', () => {
       g2.scannerProcessingRatePerSec = 1.0;
       g3.scannerProcessingRatePerSec = 1.0;
 
-      engine.applyInitialQueue(4, ['gate-1']);
-      engine.applyInitialQueue(6, ['gate-2']);
-      engine.applyInitialQueue(5, ['gate-3']);
+      engine.applyInitialQueue(4, ['gate-n1']);
+      engine.applyInitialQueue(6, ['gate-n2']);
+      engine.applyInitialQueue(5, ['gate-n3']);
 
       engine.start();
       for (let i = 0; i < 40; i++) {
@@ -642,11 +642,11 @@ describe('Gate-Side Simulation & Live Capacity Engine', () => {
 
     // 11. Resetting the simulation clears the appropriate counters.
     it('Test 11: should clear cumulative entry counters, entry history, and queues on reset', () => {
-      const gate1 = engine.state.venue.gates.find((g) => g.id === 'gate-1')!;
+      const gate1 = engine.state.venue.gates.find((g) => g.id === 'gate-n1')!;
       gate1.operationalScanners = 4;
       gate1.scannerProcessingRatePerSec = 2.0;
 
-      engine.applyInitialQueue(10, ['gate-1']);
+      engine.applyInitialQueue(10, ['gate-n1']);
       engine.start();
 
       for (let i = 0; i < 20; i++) {
@@ -672,17 +672,17 @@ describe('Gate-Side Simulation & Live Capacity Engine', () => {
 
     // 12. No admitted pedestrian is accidentally counted twice or silently lost from the accounting model.
     it('Test 12: should strictly conserve all people with zero double-counting and zero lost agents', () => {
-      const g1 = engine.state.venue.gates.find((g) => g.id === 'gate-1')!;
+      const g1 = engine.state.venue.gates.find((g) => g.id === 'gate-n1')!;
       g1.operationalScanners = 4;
       g1.scannerProcessingRatePerSec = 1.5;
 
       engine.setGateSideConfig({
-        selectedGateIds: ['gate-1'],
+        selectedGateIds: ['gate-n1'],
         inflowRatePerMin: 180,
         processingRatePerSec: 1.5,
       });
 
-      engine.applyInitialQueue(20, ['gate-1']);
+      engine.applyInitialQueue(20, ['gate-n1']);
       engine.start();
 
       // Run simulation across multiple time steps and check conservation at each interval

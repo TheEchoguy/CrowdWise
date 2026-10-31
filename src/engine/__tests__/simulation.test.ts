@@ -100,11 +100,11 @@ describe('Navigation & Dynamic Route Planning', () => {
 });
 
 describe('Simulation Engine State & Calculations', () => {
-  it('should initialize with 21 gates for Chinnaswamy Stadium', () => {
+  it('should initialize with 12 gates for Chinnaswamy Stadium', () => {
     const engine = new SimulationEngine(CHINNASWAMY_STADIUM_PROFILE, 1337);
-    expect(engine.state.venue.gates.length).toBe(21);
+    expect(engine.state.venue.gates.length).toBe(12);
     expect(engine.state.venue.seatingCapacity).toBe(40000);
-    expect(engine.state.venue.planningCapacity).toBe(35000);
+    expect(engine.state.venue.planningCapacity).toBe(40000);
   });
 
   it('should advance simulation clock on step', () => {
@@ -116,12 +116,12 @@ describe('Simulation Engine State & Calculations', () => {
 
   it('should reduce gate throughput on scanner failure', () => {
     const engine = new SimulationEngine(CHINNASWAMY_STADIUM_PROFILE, 1337);
-    const gate2 = engine.state.venue.gates.find((g) => g.id === 'gate-2');
-    expect(gate2?.operationalScanners).toBe(6);
+    const gateN2 = engine.state.venue.gates.find((g) => g.id === 'gate-n2');
+    expect(gateN2?.operationalScanners).toBe(3);
 
     engine.triggerScenario('scanner-failure');
-    expect(gate2?.operationalScanners).toBe(1);
-    expect(gate2?.status).toBe('SCANNER_FAILURE');
+    expect(gateN2?.operationalScanners).toBe(1);
+    expect(gateN2?.status).toBe('SCANNER_FAILURE');
   });
 
   it('should calculate non-negative queues and consistent summary metrics', () => {

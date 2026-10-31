@@ -7,9 +7,14 @@ import { DigitalTwinView } from './components/map/DigitalTwinView';
 import { CrowdInflowView } from './components/inflow/CrowdInflowView';
 import { ScenarioLabView } from './components/scenarios/ScenarioLabView';
 import { GateOperationsView } from './components/gates/GateOperationsView';
+import { GateDetailView } from './components/gates/GateDetailView';
 import { IncidentResponseView } from './components/incidents/IncidentResponseView';
 import { ReportsHistoryView } from './components/reports/ReportsHistoryView';
 import { SettingsView } from './components/settings/SettingsView';
+import { GateClosureRecoveryView } from './components/modules/GateClosureRecoveryView';
+import { CrowdModelValidationView } from './components/modules/CrowdModelValidationView';
+import { MultiDirectionalFlowView } from './components/modules/MultiDirectionalFlowView';
+import { SpatialRiskAnalysisView } from './components/modules/SpatialRiskAnalysisView';
 
 export const App: React.FC = () => {
   const { activeTab, engine, isRunning, isPaused, syncFromEngine } = useSimulationStore();
@@ -58,10 +63,15 @@ export const App: React.FC = () => {
         <main className="flex-1 overflow-y-auto">
           {activeTab === 'command-centre' && <CommandCentre />}
           {activeTab === 'digital-twin' && <DigitalTwinView />}
+          {activeTab === 'gate-detail' && <GateDetailView />}
           {activeTab === 'crowd-inflow' && <CrowdInflowView />}
           {activeTab === 'scenario-lab' && <ScenarioLabView />}
           {activeTab === 'gate-operations' && <GateOperationsView />}
           {activeTab === 'incident-response' && <IncidentResponseView />}
+          {activeTab === 'gate-closure' && <GateClosureRecoveryView />}
+          {activeTab === 'model-validation' && <CrowdModelValidationView />}
+          {activeTab === 'multi-directional' && <MultiDirectionalFlowView />}
+          {activeTab === 'spatial-risk' && <SpatialRiskAnalysisView />}
           {activeTab === 'reports-history' && <ReportsHistoryView />}
           {activeTab === 'settings' && <SettingsView />}
         </main>
@@ -71,4 +81,3 @@ export const App: React.FC = () => {
 };
 
 export default App;
-

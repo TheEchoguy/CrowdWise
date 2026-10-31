@@ -367,6 +367,45 @@ export const ScenarioLabView: React.FC = () => {
                           ppl
                         </td>
                       </tr>
+
+                      <tr>
+                        <td className="py-2.5 font-medium">Rerouted / Deflected Crowd</td>
+                        <td className="py-2.5 font-mono text-slate-200">
+                          {latestComparison.baseline.totalRedirectedCount || 0} ppl
+                        </td>
+                        <td className="py-2.5 font-mono text-cyan-300 font-bold">
+                          {latestComparison.interventionPlan.totalRedirectedCount || 0} ppl
+                        </td>
+                        <td className="py-2.5 font-mono font-bold text-cyan-400">
+                          +
+                          {Math.max(
+                            0,
+                            (latestComparison.interventionPlan.totalRedirectedCount || 0) -
+                              (latestComparison.baseline.totalRedirectedCount || 0)
+                          )}{' '}
+                          ppl
+                        </td>
+                      </tr>
+
+                      <tr>
+                        <td className="py-2.5 font-medium">Demand / Capacity Ratio</td>
+                        <td className="py-2.5 font-mono text-slate-200">
+                          {latestComparison.baseline.demandToCapacityRatio !== undefined
+                            ? `${latestComparison.baseline.demandToCapacityRatio.toFixed(2)}x`
+                            : '1.00x'}
+                        </td>
+                        <td className="py-2.5 font-mono text-emerald-300 font-bold">
+                          {latestComparison.interventionPlan.demandToCapacityRatio !== undefined
+                            ? `${latestComparison.interventionPlan.demandToCapacityRatio.toFixed(2)}x`
+                            : '1.00x'}
+                        </td>
+                        <td className="py-2.5 font-mono font-bold text-slate-300">
+                          {latestComparison.baseline.demandToCapacityRatio !== undefined &&
+                          latestComparison.interventionPlan.demandToCapacityRatio !== undefined
+                            ? `${(latestComparison.interventionPlan.demandToCapacityRatio - latestComparison.baseline.demandToCapacityRatio).toFixed(2)}x`
+                            : '0.00x'}
+                        </td>
+                      </tr>
                     </tbody>
                   </table>
                 </div>

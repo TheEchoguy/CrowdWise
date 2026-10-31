@@ -13,6 +13,11 @@ import {
   ShieldCheck,
   Building2,
   Users,
+  Box,
+  DoorClosed,
+  Scale,
+  Split,
+  Activity,
 } from 'lucide-react';
 import { useSimulationStore, NavigationTab } from '../../store/simulationStore';
 
@@ -41,6 +46,7 @@ export const Sidebar: React.FC = () => {
   const navItems: NavItem[] = [
     { id: 'command-centre', label: 'Command Centre', icon: LayoutDashboard },
     { id: 'digital-twin', label: 'Digital Twin', icon: MapPin },
+    { id: 'gate-detail', label: '3D Gate Simulation', icon: Box },
     { id: 'crowd-inflow', label: 'Crowd Inflow', icon: TrendingUp },
     { id: 'scenario-lab', label: 'Scenario Lab', icon: FlaskConical },
     {
@@ -54,6 +60,26 @@ export const Sidebar: React.FC = () => {
       label: 'Incident Response',
       icon: AlertTriangle,
       badge: activeWarningsCount > 0 ? activeWarningsCount : undefined,
+    },
+    {
+      id: 'gate-closure',
+      label: 'Gate Closure & Recovery',
+      icon: DoorClosed,
+    },
+    {
+      id: 'model-validation',
+      label: 'Crowd Model Validation',
+      icon: Scale,
+    },
+    {
+      id: 'multi-directional',
+      label: 'Multi-Directional Flow',
+      icon: Split,
+    },
+    {
+      id: 'spatial-risk',
+      label: 'Spatial Risk & Counterfactual',
+      icon: Activity,
     },
     { id: 'reports-history', label: 'Reports & History', icon: FileText },
     { id: 'settings', label: 'Settings', icon: Settings },
@@ -164,4 +190,3 @@ export const Sidebar: React.FC = () => {
     </aside>
   );
 };
-

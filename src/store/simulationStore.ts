@@ -17,6 +17,11 @@ import {
   GateSideSimConfig,
   GateSideEvent,
   GateEntrySnapshot,
+  CounterStatus,
+  GateOperationalControlState,
+  GateArrivalSchedule,
+  DemonstrationProfileType,
+  OverflowDoorConfig,
 } from '../types';
 import { SimulationEngine } from '../engine/SimulationEngine';
 import { SpatialAnalyzer } from '../engine/SpatialAnalyzer';
@@ -35,7 +40,12 @@ export type NavigationTab =
   | 'gate-operations'
   | 'incident-response'
   | 'reports-history'
-  | 'settings';
+  | 'settings'
+  | 'gate-detail'
+  | 'gate-closure'
+  | 'model-validation'
+  | 'multi-directional'
+  | 'spatial-risk';
 
 export type SimulationMode = 'PLANNING' | 'SIMULATION' | 'DEMO_LIVE';
 
@@ -63,6 +73,28 @@ interface SimulationStoreState {
   setVenueProfile: (venueId: string) => void;
   updateGate: (gateId: string, updates: Partial<Gate>) => void;
   updateZone: (zoneId: string, updates: Partial<Zone>) => void;
+
+  // 12-Gate Scanner Counter & Admission Control Actions
+  toggleCounter: (gateId: string, counterId: string) => void;
+  setCounterServiceRate: (gateId: string, counterId: string, rate: number) => void;
+  setGateOperationalControlState: (gateId: string, state: GateOperationalControlState) => void;
+  setGateAssignedSpectators: (gateId: string, count: number) => void;
+  setGateArrivalSchedule: (gateId: string, schedule: Partial<GateArrivalSchedule>) => void;
+  setGateArrivalRate: (gateId: string, rate: number) => void;
+  failCounters: (gateId: string, count: number) => void;
+  recoverCounter: (gateId: string, counterIndex: number) => void;
+  restoreAllCounters: (gateId: string) => void;
+  setGateLaneBalancingEnabled: (gateId: string, enabled: boolean) => void;
+  setupMultiGateCongestionDemo: () => void;
+  setDemonstrationProfile: (gateId: string, profile: DemonstrationProfileType) => void;
+  startArrivals: (gateId: string) => void;
+  pauseArrivals: (gateId: string) => void;
+  resumeArrivals: (gateId: string) => void;
+  stopArrivals: (gateId: string) => void;
+  addArrivalSurge: (gateId: string, count: number) => void;
+  resetGateSimulation: (gateId: string) => void;
+  setGateOverflowConfig: (gateId: string, updates: Partial<OverflowDoorConfig>) => void;
+  setOverflowDoorOverride: (gateId: string, override: 'AUTO' | 'FORCE_OPEN' | 'FORCE_CLOSED') => void;
 
   // Gate-Side Simulation
   focusedSide: StadiumSide;
@@ -131,24 +163,34 @@ const initialEngine = new SimulationEngine(initialVenue, 1337);
 
 export const SIDE_GATES: Record<StadiumSide, string[]> = {
   ALL: [],
-  NORTH: ['gate-1', 'gate-2', 'gate-3', 'gate-4', 'gate-5'],
-  WEST: ['gate-6', 'gate-7', 'gate-8', 'gate-9', 'gate-10'],
-  SOUTH: ['gate-11', 'gate-12', 'gate-13', 'gate-14', 'gate-15', 'gate-16'],
-  EAST: ['gate-17', 'gate-18', 'gate-19', 'gate-20', 'gate-21'],
+  NORTH: ['gate-n1', 'gate-n2', 'gate-n3'],
+  EAST: ['gate-e1', 'gate-e2', 'gate-e3'],
+  SOUTH: ['gate-s1', 'gate-s2', 'gate-s3'],
+  WEST: ['gate-w1', 'gate-w2', 'gate-w3'],
   CUSTOM: [],
 };
 
 export const getSideForGate = (gateId: string): StadiumSide => {
-  if (['gate-1', 'gate-2', 'gate-3', 'gate-4', 'gate-5'].includes(gateId)) return 'NORTH';
-  if (['gate-6', 'gate-7', 'gate-8', 'gate-9', 'gate-10'].includes(gateId)) return 'WEST';
-  if (['gate-11', 'gate-12', 'gate-13', 'gate-14', 'gate-15', 'gate-16'].includes(gateId)) return 'SOUTH';
-  if (['gate-17', 'gate-18', 'gate-19', 'gate-20', 'gate-21'].includes(gateId)) return 'EAST';
+  if (['gate-n1', 'gate-n2', 'gate-n3', 'gate-1', 'gate-2', 'gate-3', 'gate-4', 'gate-5'].includes(gateId)) return 'NORTH';
+  if (['gate-e1', 'gate-e2', 'gate-e3', 'gate-17', 'gate-18', 'gate-19', 'gate-20', 'gate-21'].includes(gateId)) return 'EAST';
+  if (['gate-s1', 'gate-s2', 'gate-s3', 'gate-11', 'gate-12', 'gate-13', 'gate-14', 'gate-15', 'gate-16'].includes(gateId)) return 'SOUTH';
+  if (['gate-w1', 'gate-w2', 'gate-w3', 'gate-6', 'gate-7', 'gate-8', 'gate-9', 'gate-10'].includes(gateId)) return 'WEST';
   return 'NORTH';
 };
 
 export const useSimulationStore = create<SimulationStoreState>((set, get) => ({
   activeTab: 'command-centre',
-  setActiveTab: (tab) => set({ activeTab: tab }),
+  setActiveTab: (tab) => {
+    if (tab === 'gate-detail' && !get().selectedGateId) {
+      const defaultGate =
+        get().currentVenue.gates.find((g) => g.id === 'gate-e2' || g.id === 'gate-n2') ||
+        get().currentVenue.gates[0];
+      if (defaultGate) {
+        get().setSelectedGateId(defaultGate.id);
+      }
+    }
+    set({ activeTab: tab });
+  },
   simulationMode: 'SIMULATION',
   setSimulationMode: (mode) => set({ simulationMode: mode }),
 
@@ -216,7 +258,7 @@ export const useSimulationStore = create<SimulationStoreState>((set, get) => ({
     if (side === 'ALL') {
       gateIds = [];
     } else if (side === 'CUSTOM') {
-      gateIds = selectedGateIds.length > 0 ? selectedGateIds : ['gate-1'];
+      gateIds = selectedGateIds.length > 0 ? selectedGateIds : ['gate-n2'];
     } else {
       gateIds = SIDE_GATES[side];
     }
@@ -302,6 +344,306 @@ export const useSimulationStore = create<SimulationStoreState>((set, get) => ({
     const newVenue = { ...currentVenue, zones: updatedZones };
     engine.state.venue = JSON.parse(JSON.stringify(newVenue));
     set({ currentVenue: newVenue });
+  },
+
+  toggleCounter: (gateId, counterId) => {
+    const { currentVenue } = get();
+    const gate = currentVenue.gates.find((g) => g.id === gateId);
+    if (!gate || !gate.counters) return;
+
+    const updatedCounters = gate.counters.map((c) => {
+      if (c.id === counterId) {
+        return {
+          ...c,
+          status: (c.status === 'OPERATIONAL' ? 'FAILED' : 'OPERATIONAL') as CounterStatus,
+        };
+      }
+      return c;
+    });
+
+    const activeCount = updatedCounters.filter((c) => c.status === 'OPERATIONAL').length;
+    const isAllFailed = activeCount === 0;
+
+    const updates: Partial<Gate> = {
+      counters: updatedCounters,
+      operationalScanners: activeCount,
+      status: isAllFailed
+        ? 'SCANNER_FAILURE'
+        : (activeCount < gate.scannerCount ? 'BUSY' : 'OPERATIONAL'),
+      operationalControlState: isAllFailed
+        ? 'ADMISSION_PAUSED'
+        : (gate.operationalControlState === 'ADMISSION_PAUSED' ? 'RECOVERY' : gate.operationalControlState),
+      warningLevel: isAllFailed
+        ? 'CRITICAL'
+        : (activeCount < gate.scannerCount ? 'HIGH' : 'NORMAL'),
+    };
+
+    get().updateGate(gateId, updates);
+    get().syncFromEngine();
+  },
+
+  setCounterServiceRate: (gateId, counterId, rate) => {
+    const { currentVenue } = get();
+    const gate = currentVenue.gates.find((g) => g.id === gateId);
+    if (!gate || !gate.counters) return;
+
+    const updatedCounters = gate.counters.map((c) =>
+      c.id === counterId ? { ...c, serviceRatePerSec: Math.max(0.1, rate) } : c
+    );
+    get().updateGate(gateId, { counters: updatedCounters });
+    get().syncFromEngine();
+  },
+
+  setGateOperationalControlState: (gateId, state) => {
+    get().updateGate(gateId, { operationalControlState: state });
+    get().syncFromEngine();
+  },
+
+  setGateAssignedSpectators: (gateId, count) => {
+    get().updateGate(gateId, { assignedSpectatorCount: Math.max(0, count) });
+    get().syncFromEngine();
+  },
+
+  setGateArrivalSchedule: (gateId, schedule) => {
+    const { currentVenue } = get();
+    const gate = currentVenue.gates.find((g) => g.id === gateId);
+    if (!gate) return;
+    const currentSchedule = gate.arrivalSchedule || {
+      mode: 'RATE',
+      arrivalRatePerMin: 100,
+    };
+    get().updateGate(gateId, { arrivalSchedule: { ...currentSchedule, ...schedule } });
+    get().syncFromEngine();
+  },
+
+  setGateArrivalRate: (gateId: string, rate: number) => {
+    const { currentVenue, engine } = get();
+    const gate = currentVenue.gates.find((g) => g.id === gateId);
+    if (!gate) return;
+    get().updateGate(gateId, { arrivalRatePerMin: Math.max(0, rate) });
+    const targetEngineGate = engine.state.venue.gates.find((g) => g.id === gateId);
+    if (targetEngineGate) {
+      targetEngineGate.arrivalRatePerMin = Math.max(0, rate);
+    }
+    get().syncFromEngine();
+  },
+
+  failCounters: (gateId: string, count: number) => {
+    const { currentVenue, engine } = get();
+    const gate = currentVenue.gates.find((g) => g.id === gateId);
+    if (!gate || !gate.counters) return;
+
+    const totalCounters = gate.counters.length;
+    const targetFail = Math.min(totalCounters, Math.max(0, count));
+
+    const updatedCounters = gate.counters.map((c, idx) => ({
+      ...c,
+      status: (idx < targetFail ? 'FAILED' : 'OPERATIONAL') as CounterStatus,
+    }));
+
+    const activeCount = updatedCounters.filter((c) => c.status === 'OPERATIONAL').length;
+    const isAllFailed = activeCount === 0;
+
+    const updates: Partial<Gate> = {
+      counters: updatedCounters,
+      operationalScanners: activeCount,
+      status: isAllFailed
+        ? 'SCANNER_FAILURE'
+        : (activeCount < gate.scannerCount ? 'BUSY' : 'OPERATIONAL'),
+      operationalControlState: isAllFailed
+        ? 'ADMISSION_PAUSED'
+        : (gate.operationalControlState === 'ADMISSION_PAUSED' ? 'RECOVERY' : gate.operationalControlState),
+      warningLevel: isAllFailed
+        ? 'CRITICAL'
+        : (activeCount < gate.scannerCount ? 'HIGH' : 'NORMAL'),
+    };
+
+    get().updateGate(gateId, updates);
+    const targetEngineGate = engine.state.venue.gates.find((g) => g.id === gateId);
+    if (targetEngineGate) {
+      Object.assign(targetEngineGate, updates);
+    }
+    get().syncFromEngine();
+  },
+
+  setGateLaneBalancingEnabled: (gateId: string, enabled: boolean) => {
+    const { currentVenue, engine } = get();
+    get().updateGate(gateId, { laneBalancingEnabled: enabled });
+    const targetEngineGate = engine.state.venue.gates.find((g) => g.id === gateId);
+    if (targetEngineGate) {
+      targetEngineGate.laneBalancingEnabled = enabled;
+    }
+    get().syncFromEngine();
+  },
+
+  recoverCounter: (gateId: string, counterIndex: number) => {
+    const { currentVenue, engine } = get();
+    const gate = currentVenue.gates.find((g) => g.id === gateId);
+    if (!gate || !gate.counters || counterIndex >= gate.counters.length) return;
+
+    const updatedCounters = gate.counters.map((c, idx) =>
+      idx === counterIndex ? { ...c, status: 'OPERATIONAL' as CounterStatus } : c
+    );
+    const activeCount = updatedCounters.filter((c) => c.status === 'OPERATIONAL').length;
+
+    const updates: Partial<Gate> = {
+      counters: updatedCounters,
+      operationalScanners: activeCount,
+      status: activeCount < gate.scannerCount ? 'BUSY' : 'OPERATIONAL',
+      operationalControlState: 'NORMAL',
+      warningLevel: activeCount < gate.scannerCount ? 'HIGH' : 'NORMAL',
+    };
+
+    get().updateGate(gateId, updates);
+    const targetEngineGate = engine.state.venue.gates.find((g) => g.id === gateId);
+    if (targetEngineGate) {
+      Object.assign(targetEngineGate, updates);
+    }
+    get().syncFromEngine();
+  },
+
+  restoreAllCounters: (gateId: string) => {
+    const { currentVenue, engine } = get();
+    const gate = currentVenue.gates.find((g) => g.id === gateId);
+    if (!gate || !gate.counters) return;
+
+    const updatedCounters = gate.counters.map((c) => ({
+      ...c,
+      status: 'OPERATIONAL' as CounterStatus,
+    }));
+
+    const updates: Partial<Gate> = {
+      counters: updatedCounters,
+      operationalScanners: updatedCounters.length,
+      status: 'OPERATIONAL',
+      operationalControlState: 'NORMAL',
+      warningLevel: 'NORMAL',
+    };
+
+    get().updateGate(gateId, updates);
+    const targetEngineGate = engine.state.venue.gates.find((g) => g.id === gateId);
+    if (targetEngineGate) {
+      Object.assign(targetEngineGate, updates);
+    }
+    get().syncFromEngine();
+  },
+
+  setupMultiGateCongestionDemo: () => {
+    const { currentVenue, engine } = get();
+    engine.reset();
+
+    const updatedGates = currentVenue.gates.map((g) => {
+      if (g.id === 'gate-e2') {
+        return {
+          ...g,
+          arrivalRatePerMin: 240,
+          operationalScanners: 3,
+          warningLevel: 'NORMAL' as const,
+          counters: (g.counters || []).map((c) => ({ ...c, status: 'OPERATIONAL' as const, serviceRatePerSec: 1.0 })),
+        };
+      } else if (g.id === 'gate-e3') {
+        return {
+          ...g,
+          arrivalRatePerMin: 60,
+          operationalScanners: 3,
+          warningLevel: 'NORMAL' as const,
+          counters: (g.counters || []).map((c) => ({ ...c, status: 'OPERATIONAL' as const, serviceRatePerSec: 1.0 })),
+        };
+      } else if (g.gateType === 'REGULAR') {
+        return {
+          ...g,
+          arrivalRatePerMin: 120,
+          operationalScanners: 3,
+          warningLevel: 'NORMAL' as const,
+          counters: (g.counters || []).map((c) => ({ ...c, status: 'OPERATIONAL' as const, serviceRatePerSec: 1.0 })),
+        };
+      }
+      return g;
+    });
+
+    const newVenue = { ...currentVenue, gates: updatedGates };
+    engine.state.venue = JSON.parse(JSON.stringify(newVenue));
+
+    engine.setGateSideConfig({
+      selectedSide: 'ALL',
+      selectedGateIds: [],
+    });
+
+    set({
+      currentVenue: newVenue,
+      selectedGateIds: [],
+      focusedSide: 'ALL',
+      selectedGateId: 'gate-e2',
+      gateSideConfig: {
+        selectedSide: 'ALL',
+        selectedGateIds: [],
+        inflowRatePerMin: 120,
+        arrivalPattern: 'GRADUAL',
+        processingRatePerSec: 1.0,
+        initialQueue: 0,
+        routingPolicy: 'SHORTEST_QUEUE',
+        spillbackThreshold: 80,
+        durationSecs: 300,
+      },
+    });
+
+    engine.start();
+    set({ isRunning: true, isPaused: false });
+    get().syncFromEngine();
+  },
+
+  setDemonstrationProfile: (gateId, profile) => {
+    const { engine } = get();
+    engine.setDemonstrationProfile(gateId, profile);
+    get().syncFromEngine();
+  },
+
+  startArrivals: (gateId) => {
+    const { engine } = get();
+    engine.startArrivals(gateId);
+    get().syncFromEngine();
+  },
+
+  pauseArrivals: (gateId) => {
+    const { engine } = get();
+    engine.pauseArrivals(gateId);
+    get().syncFromEngine();
+  },
+
+  resumeArrivals: (gateId) => {
+    const { engine } = get();
+    engine.resumeArrivals(gateId);
+    get().syncFromEngine();
+  },
+
+  stopArrivals: (gateId) => {
+    const { engine } = get();
+    engine.stopArrivals(gateId);
+    get().syncFromEngine();
+  },
+
+  addArrivalSurge: (gateId, count) => {
+    const { engine } = get();
+    engine.addArrivalSurge(gateId, count);
+    get().syncFromEngine();
+  },
+
+  resetGateSimulation: (gateId) => {
+    const { engine } = get();
+    engine.resetGateSimulation(gateId);
+    get().syncFromEngine();
+  },
+
+  setGateOverflowConfig: (gateId, updates) => {
+    const { engine } = get();
+    engine.setGateOverflowConfig(gateId, updates);
+    get().syncFromEngine();
+  },
+
+  setOverflowDoorOverride: (gateId, override) => {
+    const { engine } = get();
+    engine.setOverflowDoorOverride(gateId, override);
+    get().syncFromEngine();
   },
 
   activeScenarioId: 'chinnaswamy-hypothetical-surge',

@@ -46,8 +46,8 @@ export const DEFAULT_INTERVENTIONS: Intervention[] = [
     category: 'REROUTE_APPROACH',
     isActive: false,
     params: {
-      sourceGateIds: ['gate-1', 'gate-2'],
-      targetGateIds: ['gate-3', 'gate-4'],
+      sourceGateIds: ['gate-n1', 'gate-n2'],
+      targetGateIds: ['gate-n3', 'gate-e1'],
       maxDiversionRatio: 0.5,
     },
   },
