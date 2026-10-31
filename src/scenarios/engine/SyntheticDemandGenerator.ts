@@ -20,7 +20,7 @@ import { ArrivalDistributionEngine } from './ArrivalDistribution';
 export class SyntheticDemandGenerator {
   public static readonly MAX_SIMULATION_AGENTS = 2500;
   public static readonly MIN_SIMULATION_AGENTS = 50;
-  public static readonly DEFAULT_VENUE_CAPACITY = 50000;
+  public static readonly DEFAULT_VENUE_CAPACITY = 35000;
   public static readonly CANVAS_WIDTH = 960;
   public static readonly CANVAS_HEIGHT = 580;
 
@@ -233,15 +233,27 @@ export class SyntheticDemandGenerator {
       prng
     });
 
-    // 2. Pre-compute deterministic gate assignments using stratified threshold
+    // 2. Pre-compute deterministic simultaneous gate assignments
+    // Pre-compute exact gate distribution matching gate_A_share and gate_B_share
     const gateACount = Math.round(totalAgents * event.gate_A_share);
+    const gateTargets: ('gate-a' | 'gate-b')[] = new Array(totalAgents);
+    for (let i = 0; i < totalAgents; i++) {
+      gateTargets[i] = i < gateACount ? 'gate-a' : 'gate-b';
+    }
+
+    // Deterministic seeded Fisher-Yates shuffle across chronological timestamps
+    // Ensures both streams operate concurrently throughout the arrival period (e.g. 75/25 in each time quartile)
+    for (let i = totalAgents - 1; i > 0; i--) {
+      const j = Math.floor(prng.next() * (i + 1));
+      const temp = gateTargets[i];
+      gateTargets[i] = gateTargets[j];
+      gateTargets[j] = temp;
+    }
 
     const descriptors: PreGeneratedAgentDescriptor[] = new Array(totalAgents);
 
     for (let i = 0; i < totalAgents; i++) {
-      // Stratified gate routing: first gateACount to Gate A, rest to Gate B
-      const isGateA = i < gateACount;
-      const defaultGateTarget = isGateA ? 'gate-a' : 'gate-b';
+      const defaultGateTarget = gateTargets[i];
 
       // Initial concourse coordinates (Approach from lower concourse)
       const concourseMarginX = 80;

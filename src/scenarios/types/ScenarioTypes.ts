@@ -1,10 +1,14 @@
 /**
  * CROWDWISE Predictive Crowd Digital Twin & Safety Lab
- * Scenario & Synthetic Data Engine: Type Definitions (v1.3)
+ * Scenario & Synthetic Data Engine: Type Definitions (v1.4)
  *
- * Provides strongly typed schemas for synthetic event demand,
- * discrete multi-lane turnstiles, immutable pre-generated arrival schedules,
- * configurable density/corridor assumptions, and 3-way paired ablation experiments.
+ * Provides strongly typed schemas for:
+ * 1. M. Chinnaswamy 35,000 capacity stadium specifications
+ * 2. Six canonical operational scenarios
+ * 3. Three-Zone Micro-Ingress Monitoring (Gate Approach, Holding, Upstream)
+ * 4. Bidirectional Counterflow Experimentation & Throughput Reduction
+ * 5. Paired Counterfactual Displacement Detection & Verdicts
+ * 6. Pure Physics Validation & Fundamental Diagram (J = rho * v)
  */
 
 export type ArrivalPatternType = 'uniform' | 'gaussian_peak' | 'burst';
@@ -26,11 +30,19 @@ export type GateTargetId =
 
 export type RoutingMode = 'fixed' | 'adaptive';
 
+export type FlowDirection = 'inbound' | 'outbound';
+
 export type SafetyVerdict =
   | 'Improvement'
   | 'Moderate Improvement'
   | 'Neutral'
   | 'Safety Degradation';
+
+export type DisplacementVerdict =
+  | 'IMPROVED'
+  | 'DISPLACED'
+  | 'DEGRADED'
+  | 'INCONCLUSIVE';
 
 /**
  * Configurable simulation assumptions for crowd density thresholds.
@@ -43,9 +55,6 @@ export interface DensityThresholdAssumptions {
 
 /**
  * Downstream physical concourse / corridor capacity parameters.
- * Separates physical corridor walkway throughput from turnstile scan capacity.
- * Source: UK Green Guide (6th Edition) & Fruin pedestrian transit manuals:
- * Specific flow rate Js ≈ 66 - 82 pedestrians / meter clear width / minute.
  */
 export interface CorridorCapacityAssumptions {
   readonly downstreamCorridorWidthMeters: number; // Clear internal concourse width (meters)
@@ -54,41 +63,32 @@ export interface CorridorCapacityAssumptions {
 
 /**
  * Discrete multi-lane gate configuration.
- * Authoritative single source for gate capacity calculations.
  */
 export interface GateLaneConfig {
   readonly gateId: string;
   readonly name: string;
   readonly totalLanes: number;         // Total physical turnstile lanes installed
-  readonly operationalLanes: number;   // Discrete active functioning lanes (0 <= operational <= total)
+  readonly operationalLanes: number;   // Active functioning lanes (0 <= operational <= total)
   readonly turnstileLatencySec: number;// Inspection/scan latency per person (seconds)
 }
 
 /**
  * Event-level parameters and attendance generation input.
- *
- * ATTENDANCE SEMANTICS:
- * - venueCapacity: Maximum physical occupancy of the venue (e.g. 50,000).
- * - ticketSalesPercentage: Ratio of tickets sold to venue capacity (e.g. 0.95 -> 47,500 tickets).
- * - attendancePercentage: Ratio of ticket holders who actually show up (default: 1.0 = 100%).
- * - expectedAttendance: ticketsSold * attendancePercentage (e.g. 47,500 * 1.0 = 47,500).
- * - maxSimulatedAgents: Cap on microscopic entities instantiated (default: 2,500).
- * - S_pop = expectedAttendance / simulatedAgents (e.g. 47,500 / 2,500 = 19.0).
  */
 export interface SyntheticEventConfigInput {
   readonly eventId?: string;
   readonly eventName?: string;
-  readonly venueCapacity: number;          // Real venue capacity (e.g., 50,000)
+  readonly venueCapacity: number;          // Chinnaswamy physical capacity: 35,000
   readonly ticketSalesPercentage: number;  // 0.0 to 1.0 (e.g. 0.95 for 95%)
-  readonly attendancePercentage?: number;  // 0.0 to 1.0 (default: 1.0 = 100% of ticket holders)
-  readonly expectedAttendanceOverride?: number; // Optional direct specification of expected attendance
-  readonly maxSimulatedAgents?: number;    // Capped at 2,500 for 60 FPS budget
+  readonly attendancePercentage?: number;  // 0.0 to 1.0 (default: 1.0 = 100%)
+  readonly expectedAttendanceOverride?: number;
+  readonly maxSimulatedAgents?: number;    // Cap: 2,500 for 60 FPS budget
   readonly arrivalStartTimeMin?: number;   // In minutes (default: 0)
   readonly arrivalEndTimeMin?: number;     // In minutes (default: 60)
   readonly arrivalDistribution: ArrivalPatternType;
-  readonly gaussianPeakMin?: number;       // Peak minute for gaussian distribution (e.g. 25)
-  readonly gaussianStdDevMin?: number;     // Standard deviation for gaussian distribution (in minutes)
-  readonly targetPeakArrivalRateReal?: number; // Target peak arrival rate in real people/min (e.g. 1800)
+  readonly gaussianPeakMin?: number;       // Peak minute for gaussian distribution
+  readonly gaussianStdDevMin?: number;     // Standard deviation for gaussian distribution
+  readonly targetPeakArrivalRateReal?: number; // Target peak arrival rate in real people/min
   readonly burstIntervals?: readonly { readonly startMin: number; readonly endMin: number; readonly weight: number }[];
   readonly gateAShare: number;             // Proportion routed to Gate A (0.0 to 1.0)
   readonly gateBShare: number;             // Proportion routed to Gate B (0.0 to 1.0)
@@ -97,6 +97,7 @@ export interface SyntheticEventConfigInput {
   readonly routingMode?: RoutingMode;      // Default: 'fixed'
   readonly densityThresholds?: DensityThresholdAssumptions;
   readonly corridorAssumptions?: CorridorCapacityAssumptions;
+  readonly sectorId?: 'east' | 'north' | 'west' | 'south';
 }
 
 /**
@@ -105,44 +106,44 @@ export interface SyntheticEventConfigInput {
 export interface SyntheticEventData {
   readonly event_id: string;
   readonly event_name: string;
-  readonly venue_capacity: number;           // Real venue physical capacity (e.g., 50,000)
-  readonly tickets_sold: number;             // Real tickets sold (venue_capacity * ticketSalesPercentage)
-  readonly attendance_percentage: number;    // Show-up rate (0.0 to 1.0, default: 1.0)
-  readonly expected_attendance: number;      // Real expected attendees (tickets_sold * attendance_percentage)
-  readonly simulated_agent_population: number; // Discrete entities instantiated in sim (<= 2,500)
-  readonly population_scaling_ratio: number; // Real spectators represented per sim agent (S_pop)
-  readonly arrival_start_time_min: number;   // In minutes
-  readonly arrival_end_time_min: number;     // In minutes
+  readonly venue_capacity: number;           // Chinnaswamy physical capacity: 35,000
+  readonly tickets_sold: number;             // Real tickets sold
+  readonly attendance_percentage: number;    // Show-up rate (0.0 to 1.0)
+  readonly expected_attendance: number;      // Real expected attendees
+  readonly simulated_agent_population: number; // Microscopic entities instantiated in sim (<= 2,500)
+  readonly population_scaling_ratio: number; // S_pop = expected_attendance / simulated_agent_population
+  readonly arrival_start_time_min: number;
+  readonly arrival_end_time_min: number;
   readonly arrival_distribution: ArrivalPatternType;
   readonly peak_arrival_rate_real: number;   // Real spectators per minute at peak
   readonly peak_arrival_rate_sim: number;    // Simulated agents per minute at peak
-  readonly gate_A_share: number;             // Fraction of patrons targeting Gate A
-  readonly gate_B_share: number;             // Fraction of patrons targeting Gate B
+  readonly gate_A_share: number;
+  readonly gate_B_share: number;
   readonly gates: Record<string, GateLaneConfig>;
   readonly random_seed: number;
   readonly routing_mode: RoutingMode;
   readonly density_thresholds: DensityThresholdAssumptions;
   readonly corridor_assumptions: CorridorCapacityAssumptions;
-  readonly is_synthetic: true;               // Explicit marker distinguishing from real telemetry
+  readonly sector_id?: 'east' | 'north' | 'west' | 'south';
+  readonly is_synthetic: true;
 }
 
 /**
  * Immutable descriptor for an individual pedestrian agent.
- * Pre-computed before simulation begins to guarantee 100% paired reproducibility.
  */
 export interface PreGeneratedAgentDescriptor {
   readonly agentIndex: number;
   readonly spawnTimeSimSec: number;        // Physical simulation time in seconds
-  readonly initialConcourseX: number;      // Exact lateral spawn coordinate (px)
-  readonly initialConcourseY: number;      // Exact longitudinal spawn coordinate (px)
+  readonly initialConcourseX: number;      // Lateral spawn coordinate (px)
+  readonly initialConcourseY: number;      // Longitudinal spawn coordinate (px)
   readonly defaultGateTarget: GateTargetId; // Initial assigned destination
-  readonly walkingSpeedMps: number;        // Individual desired free-flow velocity (m/s)
-  readonly physicalRadiusPx: number;       // Physical circular collision radius (px)
+  readonly walkingSpeedMps: number;        // Desired free-flow velocity (m/s)
+  readonly physicalRadiusPx: number;       // Circular collision radius (px)
+  readonly direction?: FlowDirection;      // 'inbound' (default) or 'outbound'
 }
 
 /**
  * Complete immutable schedule of pre-generated pedestrian arrivals.
- * Ingested identically by both Baseline and Mitigated counterfactual runs.
  */
 export interface PreGeneratedArrivalSchedule {
   readonly eventId: string;
@@ -170,7 +171,7 @@ export interface ScenarioDefinition {
   readonly subtitle: string;
   readonly category: 'operational' | 'stress_test' | 'emergency' | 'counterfactual';
   readonly description: string;
-  readonly researchHypothesis: string;     // Empirical research hypothesis
+  readonly researchHypothesis: string;
   readonly defaultEvent: SyntheticEventConfigInput;
   readonly initialGeometryType: 'stadium' | 'bridge' | 'reversal';
   readonly defaultMitigations: {
@@ -180,33 +181,139 @@ export interface ScenarioDefinition {
   };
 }
 
-/**
- * Comprehensive empirical simulation metrics calculated per run.
- */
-export interface DetailedSimulationAnalytics {
-  readonly totalGeneratedSim: number;
-  readonly totalAdmittedSim: number;
-  readonly representedAdmitted: number;
-  readonly peakLocalDensity: number;               // Fruin local density (people/m²)
-  readonly averageLocalDensity: number;            // Concourse spatial-temporal mean (people/m²)
-  readonly spillbackGateAMeters: number;           // Longitudinal upstream queue Gate A (m)
-  readonly spillbackGateBMeters: number;           // Longitudinal upstream queue Gate B (m)
-  readonly maxQueueSpillbackMeters: number;        // Max(Spillback A, Spillback B) (m)
-  readonly averageWaitingTimeSeconds: number;      // Mean turnstile queue delay (s)
-  readonly maximumWaitingTimeSeconds: number;      // Maximum turnstile queue delay (s)
-  readonly observedThroughputSimPerMin: number;    // Rolling 60s sim agents / min
-  readonly observedThroughputRepPerMin: number;    // Rolling 60s represented people / min
-  readonly theoreticalCapacityRepPerMin: number;   // Calculated max capacity (people / min)
-  readonly capacityUtilizationRatio: number;       // (Observed / Theoretical) * 100%
-  readonly congestionEventsCount: number;          // Hysteresis triggers (density >= threshold)
-  readonly criticalHazardDurationSeconds: number; // Cumulative time density >= critical threshold (s)
-  readonly simulationDurationSeconds: number;     // Physical simulation elapsed time (s)
-  readonly actualFps: number;                      // Physics calculation frame rate
+// =========================================================================
+// SURPRISE HURDLE — THREE-ZONE MONITORING TYPES
+// =========================================================================
+
+export type ZoneId = 'zone_gate' | 'zone_holding' | 'zone_upstream';
+
+export interface ZoneMetrics {
+  readonly zoneId: ZoneId;
+  readonly name: string;
+  readonly currentDensity: number;       // people / m²
+  readonly peakDensity: number;          // Max observed density (p/m²)
+  readonly averageSpeedMps: number;      // Mean velocity magnitude (m/s)
+  readonly agentCount: number;           // Active pedestrians in zone
+  readonly waitingAgentsCount: number;   // Agents with stuckTime > 0.5s
+  readonly averageWaitingTimeSec: number;// Mean queue delay (s)
+  readonly queueLengthMeters: number;    // Longitudinal queue extent (m)
+  readonly observedThroughputPerMin: number; // Clearances / min
+  readonly spillbackMeters: number;      // Upstream propagation from zone barrier (m)
+  readonly areaM2: number;               // Zone calibrated area in m²
+  readonly warningTriggered: boolean;    // True if density >= frictionThreshold
 }
 
-/**
- * Mathematical comparison deltas between two simulation runs.
- */
+export interface ThreeZoneTelemetry {
+  readonly gateApproach: ZoneMetrics;
+  readonly intermediateHolding: ZoneMetrics;
+  readonly upstreamArrival: ZoneMetrics;
+  readonly systemMaxDensity: number;     // max(gate, holding, upstream)
+  readonly timeIntegratedExposure: number; // Integral of (density - threshold)+ dt
+  readonly timestampSec: number;
+}
+
+// =========================================================================
+// SURPRISE HURDLE — BIDIRECTIONAL COUNTER-FLOW TYPES
+// =========================================================================
+
+export interface CounterflowConfig {
+  readonly opposingFlowPercent: number; // 0%, 10%, 25%, 40%
+  readonly measurementLineY: number;    // Mid-corridor Y coordinate (px)
+  readonly enableSeparationBarrier: boolean;
+}
+
+export interface CounterflowTelemetry {
+  readonly opposingFlowPercent: number;
+  readonly inboundThroughputPerMin: number;
+  readonly outboundThroughputPerMin: number;
+  readonly totalCrossingCount: number;
+  readonly averageInboundSpeedMps: number;
+  readonly averageOutboundSpeedMps: number;
+  readonly peakLocalDensity: number;
+  readonly maxQueueLengthMeters: number;
+  readonly baselineThroughputPerMin: number;
+  readonly capacityReductionPercent: number;
+  readonly operationalRecommendation: string;
+}
+
+// =========================================================================
+// SURPRISE HURDLE — DISPLACEMENT DETECTOR TYPES
+// =========================================================================
+
+export interface PairedZoneComparison {
+  readonly zoneId: ZoneId;
+  readonly name: string;
+  readonly baselinePeakDensity: number;
+  readonly mitigatedPeakDensity: number;
+  readonly densityDeltaPercent: number;
+  readonly baselineQueueMeters: number;
+  readonly mitigatedQueueMeters: number;
+  readonly queueDeltaPercent: number;
+  readonly baselineAvgSpeedMps: number;
+  readonly mitigatedAvgSpeedMps: number;
+  readonly speedDeltaPercent: number;
+}
+
+export interface DisplacementAnalysisResult {
+  readonly verdict: DisplacementVerdict;
+  readonly empiricalExplanation: string;
+  readonly baselineSystemMaxDensity: number;
+  readonly mitigatedSystemMaxDensity: number;
+  readonly gateApproach: PairedZoneComparison;
+  readonly intermediateHolding: PairedZoneComparison;
+  readonly upstreamArrival: PairedZoneComparison;
+  readonly operationalRecommendation: string;
+  readonly confidenceScore: number;
+}
+
+// =========================================================================
+// SURPRISE HURDLE — PHYSICS VALIDATION & FUNDAMENTAL DIAGRAM
+// =========================================================================
+
+export interface FundamentalDiagramPoint {
+  readonly density: number; // rho (p/m²)
+  readonly speed: number;   // v (m/s)
+  readonly flow: number;    // J = rho * v (p/(m·s))
+  readonly timestampSec: number;
+}
+
+export interface PhysicsValidationTelemetry {
+  readonly isValidationModeActive: boolean;
+  readonly currentJFlowRate: number;      // Pedestrian flow (p/(m·s))
+  readonly currentDensityRho: number;     // Density (p/m²)
+  readonly currentSpeedV: number;         // Velocity (m/s)
+  readonly theoreticalJ: number;          // rho * v product
+  readonly flowDecayObserved: boolean;    // True if flow drops as density rises past capacity
+  readonly diagramHistory: readonly FundamentalDiagramPoint[];
+}
+
+// =========================================================================
+// COMPREHENSIVE EXPERIMENT ANALYTICS
+// =========================================================================
+
+export interface DetailedSimulationAnalytics {
+  readonly scenarioId: ScenarioId;
+  readonly seed: number;
+  readonly totalGeneratedAgents: number;
+  readonly totalAdmittedAgents: number;
+  readonly peakLocalDensity: number;
+  readonly averageLocalDensity: number;
+  readonly spillbackGateAMeters: number;
+  readonly spillbackGateBMeters: number;
+  readonly maxQueueSpillbackMeters: number;
+  readonly averageWaitingTimeSeconds: number;
+  readonly maximumWaitingTimeSeconds: number;
+  readonly observedThroughputSimPerMin: number;
+  readonly observedThroughputRepPerMin: number;
+  readonly theoreticalCapacityRepPerMin: number;
+  readonly capacityUtilizationRatio: number;
+  readonly congestionEventsCount: number;
+  readonly criticalHazardDurationSeconds: number;
+  readonly simulationDurationSeconds: number;
+  readonly actualFps: number;
+  readonly threeZone?: ThreeZoneTelemetry;
+}
+
 export interface ComparisonDeltas {
   readonly peakDensityDelta: number;
   readonly peakDensityPercent: number;
@@ -220,9 +327,6 @@ export interface ComparisonDeltas {
   readonly hazardDurationPercent: number;
 }
 
-/**
- * Standard 2-way comparison result.
- */
 export interface ScenarioComparisonResult {
   readonly scenarioId: ScenarioId;
   readonly seed: number;
@@ -230,25 +334,19 @@ export interface ScenarioComparisonResult {
   readonly mitigated: DetailedSimulationAnalytics;
   readonly deltas: ComparisonDeltas;
   readonly safetyVerdict: SafetyVerdict;
+  readonly displacementResult?: DisplacementAnalysisResult;
   readonly empiricalExplanation: string;
 }
 
-/**
- * Scenario 6: 3-Way Paired Ablation Experiment Result.
- * Ingests the EXACT SAME immutable schedule for:
- * 1. Baseline: Gate B closed, Baffles off
- * 2. Experiment A: Gate B open, Baffles off (isolates Gate B reopening effect)
- * 3. Experiment B: Gate B open, Baffles on (isolates additional chicane wave-damping effect)
- */
 export interface TripletScenarioComparisonResult {
   readonly scenarioId: ScenarioId;
   readonly seed: number;
-  readonly baseline: DetailedSimulationAnalytics;   // Gate B closed, Baffles off
-  readonly experimentA: DetailedSimulationAnalytics; // Gate B open, Baffles off
-  readonly experimentB: DetailedSimulationAnalytics; // Gate B open, Baffles on
-  readonly deltasA: ComparisonDeltas;                // Exp A vs Baseline (Gate B effect)
-  readonly deltasB: ComparisonDeltas;                // Exp B vs Baseline (Combined effect)
-  readonly deltasBaffleOnly: ComparisonDeltas;       // Exp B vs Exp A (Pure Baffle effect)
+  readonly baseline: DetailedSimulationAnalytics;
+  readonly experimentA: DetailedSimulationAnalytics;
+  readonly experimentB: DetailedSimulationAnalytics;
+  readonly deltasA: ComparisonDeltas;
+  readonly deltasB: ComparisonDeltas;
+  readonly deltasBaffleOnly: ComparisonDeltas;
   readonly verdictA: SafetyVerdict;
   readonly verdictB: SafetyVerdict;
   readonly empiricalExplanation: string;

@@ -128,7 +128,7 @@ describe('Phase 3 Integration: Multi-Lane Gate & Simulation Orchestration', () =
       event.population_scaling_ratio
     );
     assert.strictEqual(theoretical.simCapacityPerMin, 10, 'Scenario 3 capacity must be exactly 10 sim agents/min');
-    assert.strictEqual(theoretical.repCapacityPerMin, 160, 'Scenario 3 rep capacity must be 160 people/min (10 * 16.0)');
+    assert.strictEqual(theoretical.repCapacityPerMin, Math.round(10 * event.population_scaling_ratio), 'Scenario 3 rep capacity = 10 * S_pop');
 
     // Step 300s so plenty of patrons (over 100) are queued
     engine.step(300.0);

@@ -1,7 +1,16 @@
 /**
  * CROWDWISE Predictive Crowd Digital Twin & Safety Lab
- * Foundational Simulation Type Definitions (Phase 3 Extended)
+ * Foundational Simulation Type Definitions (Phase 3 & Surprise Hurdle Extended)
  */
+
+import {
+  CounterflowTelemetry,
+  DisplacementAnalysisResult,
+  FlowDirection,
+  PhysicsValidationTelemetry,
+  ThreeZoneTelemetry
+} from '../scenarios/types/ScenarioTypes';
+import { SafetyRecommendationItem } from '../scenarios/engine/SafetyController';
 
 export interface Wall {
   x1: number;
@@ -43,7 +52,8 @@ export interface AgentData {
   desiredSpeed?: number;
   maxSpeed?: number;
   active?: boolean;
-  // Phase 3 Extended Analytics Attributes
+  direction?: FlowDirection; // 'inbound' | 'outbound'
+  // Analytics Attributes
   spawnTimeSimSec?: number;
   targetGateId?: string;
   queueWaitingTimeSec?: number;
@@ -57,12 +67,17 @@ export interface TelemetryState {
   liveAgents: number;       // Active pedestrians on map
   fps: number;              // Rendering/physics frame rate
   isCritical: boolean;      // True when peakDensity >= critical threshold
-  // Phase 3 Verified Extended Metrics
   representedAdmitted?: number;
   totalAdmittedSim?: number;
   totalGeneratedSim?: number;
+  totalInboundInjected?: number;
+  totalOutboundInjected?: number;
+  totalOutboundExited?: number;
+  activeInbound?: number;
+  activeOutbound?: number;
   observedThroughputRep?: number;
   theoreticalCapacityRep?: number;
+  effectiveSimInflowRate?: number;
   capacityUtilization?: number;
   spillbackGateAMeters?: number;
   spillbackGateBMeters?: number;
@@ -71,6 +86,19 @@ export interface TelemetryState {
   criticalHazardDuration?: number;
   congestionEventsCount?: number;
   simTimeSec?: number;
+  isDemoMode?: boolean;
+  demoTimeMultiplier?: number;
+  // Surprise Hurdle Telemetry
+  threeZone?: ThreeZoneTelemetry;
+  counterflow?: CounterflowTelemetry;
+  displacementResult?: DisplacementAnalysisResult;
+  safetyRecommendations?: readonly SafetyRecommendationItem[];
+  physicsValidation?: PhysicsValidationTelemetry;
+  // 21-Gate Stadium Network Telemetry
+  networkSummary?: any;
+  focusedGateId?: string;
+  focusedGateNumber?: number;
+  focusedGateState?: any;
 }
 
 export type ScenarioType = 'stadium' | 'bridge' | 'reversal';

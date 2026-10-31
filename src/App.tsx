@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { Header } from './components/layout/Header';
 import { LeftControls } from './components/layout/LeftControls';
 import { RightTelemetry } from './components/layout/RightTelemetry';
@@ -8,6 +8,30 @@ import { useSimulationStore } from './state/useSimulationStore';
 
 export const App: React.FC = () => {
   const scenario = useSimulationStore((s) => s.scenario);
+
+  // Synchronize URL search params and expose window interface for browser automation
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      (window as any).__CROWDWISE_STORE__ = useSimulationStore;
+
+      try {
+        const params = new URLSearchParams(window.location.search);
+        const gateParam = params.get('gate');
+        const viewParam = params.get('view');
+        if (gateParam) {
+          const num = parseInt(gateParam, 10);
+          if (!isNaN(num) && num >= 1 && num <= 21) {
+            useSimulationStore.getState().setSelectedGateNumber(num);
+          }
+        }
+        if (viewParam === 'micro' || viewParam === 'macro') {
+          useSimulationStore.getState().setViewMode(viewParam);
+        }
+      } catch (err) {
+        // Ignored in non-browser or file without query support
+      }
+    }
+  }, []);
 
   const scenarioTitles: Record<string, { title: string; subtitle: string }> = {
     stadium: {
@@ -76,4 +100,3 @@ export const App: React.FC = () => {
 };
 
 export default App;
-

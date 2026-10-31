@@ -1,0 +1,100 @@
+{
+  "exportMetadata": {
+    "system": "CROWDWISE Predictive Safety Digital Twin",
+    "version": "1.0.0",
+    "venue": "M. Chinnaswamy Stadium, Bengaluru",
+    "venueCapacity": 35000,
+    "exportTimestampIso": "2026-10-30T22:09:51.905Z",
+    "exportTimestampEpochMs": 1793398191905,
+    "experimentId": "EXP-CHINNASWAMY-SAFETY_INTERVENTION-2026-1793398191905",
+    "auditStatus": "PAIRED_COUNTERFACTUAL_COMPLETE"
+  },
+  "scenarioConfiguration": {
+    "scenarioId": "safety_intervention",
+    "scenarioName": "Intelligent Safety Intervention Lab",
+    "inflowRatePerMin": 240,
+    "gateLatencySec": 4,
+    "walkingSpeedMps": 1.3,
+    "bafflesActive": true,
+    "auxGateActive": true,
+    "opposingFlowPercent": 10,
+    "physicsValidationMode": false
+  },
+  "arrivalScheduleMetadata": {
+    "seed": 2026,
+    "scheduleId": "SCEN-06-SAFETY-INTERV",
+    "totalScheduledAgents": 2500,
+    "representedTotalAttendance": 33250,
+    "eventDurationMinutes": 60,
+    "peakArrivalRateRepPerMin": 1800,
+    "scalingRatio": 13.3
+  },
+  "pairedAuditSummary": {
+    "displacementVerdict": "IMPROVED",
+    "confidenceScore": 0.92,
+    "baselineSystemMaxDensity": 5.4,
+    "mitigatedSystemMaxDensity": 3.4,
+    "systemMaxDensityDeltaPercent": -37,
+    "empiricalExplanation": "SYSTEM-WIDE SAFETY IMPROVEMENT: Gate Approach density decreased by 37.0% without material degradation in Holding Area (+3.2%) or Upstream (-4.5%). System maximum density dropped from 5.4 to 3.4 p/m².",
+    "operationalRecommendation": "Maintain current multi-gate and baffle configuration as standard operating procedure."
+  },
+  "threeZoneMeasurements": {
+    "zone1GateApproach": {
+      "name": "Zone 1: Gate Approach Area (204 m²)",
+      "baselinePeakDensity": 5.4,
+      "mitigatedPeakDensity": 3.4,
+      "densityDeltaPercent": -37,
+      "queueDeltaPercent": -66.5,
+      "currentDensity": 3.4,
+      "currentAvgSpeedMps": 0.72,
+      "currentQueueDepthMeters": 6.2,
+      "currentWaitingCount": 12,
+      "currentSpillbackDistanceMeters": 6.2
+    },
+    "zone2HoldingArea": {
+      "name": "Zone 2: Intermediate Holding Concourse (333 m²)",
+      "baselinePeakDensity": 3.1,
+      "mitigatedPeakDensity": 3.2,
+      "densityDeltaPercent": 3.2,
+      "queueDeltaPercent": 10,
+      "currentDensity": 2.8,
+      "currentAvgSpeedMps": 0.88,
+      "currentQueueDepthMeters": 4.5,
+      "currentWaitingCount": 8,
+      "currentSpillbackDistanceMeters": 4.5
+    },
+    "zone3UpstreamArrival": {
+      "name": "Zone 3: Upstream Arrival Concourse (360 m²)",
+      "baselinePeakDensity": 2.2,
+      "mitigatedPeakDensity": 2.1,
+      "densityDeltaPercent": -4.5,
+      "queueDeltaPercent": 0,
+      "currentDensity": 2,
+      "currentAvgSpeedMps": 1.15,
+      "currentQueueDepthMeters": 0,
+      "currentWaitingCount": 0,
+      "currentSpillbackDistanceMeters": 0
+    }
+  },
+  "simulationPerformance": {
+    "simTimeSec": 0,
+    "representedAdmitted": 0,
+    "totalAdmittedSim": 0,
+    "totalGeneratedSim": 0,
+    "observedThroughputRepPerMin": 0,
+    "currentFps": 60,
+    "peakDensity": 3.4,
+    "maxQueueSpillbackMeters": 6.2
+  },
+  "safetyRecommendations": [
+    {
+      "id": "rec-aux-gate",
+      "severity": "advisory",
+      "title": "Maintain Gate 3 Auxiliary Bypass Active",
+      "reason": "Absorbs 48% of incoming pedestrian flux from Cubbon Road concourse",
+      "actionText": "Keep Gate 3 turnstiles 5-8 operational through kickoff",
+      "targetParameter": "auxGateActive",
+      "recommendedValue": true
+    }
+  ]
+}
