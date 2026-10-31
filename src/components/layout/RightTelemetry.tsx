@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { useSimulationStore } from '../../state/useSimulationStore';
 import { CHINNASWAMY_CONFIG } from '../../engine/ChinnaswamyData';
 import { GATE_CONNECTIVITY_CATALOG } from '../../stadium/network/gateConnectivity';
@@ -52,12 +52,13 @@ export const RightTelemetry: React.FC = () => {
   const comparativeAudit = useSimulationStore((s) => s.comparativeAudit);
   const interactionAnalysis = useSimulationStore((s) => s.interactionAnalysis);
 
-  // Phase 2.1 Microscopic Gate Simulation Subscriptions
+  // Phase 2.1 & 2.2 Microscopic Gate Simulation Subscriptions
   const simulationDisplayMode = useSimulationStore((s) => s.simulationDisplayMode);
   const selectedOuterGateId = useSimulationStore((s) => s.selectedOuterGateId) || 'E22';
   const microGateMetrics = useSimulationStore((s) => s.microGateMetrics);
   const gateLogs = useSimulationStore((s) => s.gateLogs);
   const clearGateLogs = useSimulationStore((s) => s.clearGateLogs);
+  const [logScope, setLogScope] = useState<'SELECTED_GATE' | 'VENUE'>('SELECTED_GATE');
   const physicsDeckTab = useSimulationStore((s) => s.physicsDeckTab);
   const setPhysicsDeckTab = useSimulationStore((s) => s.setPhysicsDeckTab);
 
@@ -188,9 +189,13 @@ export const RightTelemetry: React.FC = () => {
       ticketsScanned: 0,
       ticketsAccepted: 0,
       ticketsRejected: 0,
+      personsChecked: 0,
+      personsVerified: 0,
+      personMismatches: 0,
       securityCleared: 0,
       waitingInQueues: 0,
       currentlyScanning: 0,
+      currentlyChecking: 0,
       currentlyScreening: 0,
       turnstilesOperational: 9,
       turnstilesTotal: 9,
@@ -198,6 +203,10 @@ export const RightTelemetry: React.FC = () => {
       averageWaitTimeSec: 0,
       currentThroughputPerMin: 0,
       gateUtilizationPercent: 100,
+      ticketScanCapacityPerMin: 600,
+      personCheckCapacityPerMin: 240,
+      turnstileCapacityPerMin: 360,
+      effectiveCapacityPerMin: 240,
       zone1ApproachDensity: 0,
       zone1ApproachCount: 0,
       zone2HoldingDensity: 0,
@@ -255,7 +264,7 @@ export const RightTelemetry: React.FC = () => {
 
           {/* Tickets Scanned / Rejections */}
           <div className="p-2 rounded bg-slate-950/80 border border-slate-800 flex flex-col">
-            <span className="text-[9px] text-slate-400">Validation (NFC/QR)</span>
+            <span className="text-[9px] text-slate-400">Stage 1: NFC/QR Scan</span>
             <div className="flex items-baseline justify-between mt-1">
               <span className="text-sm font-bold text-slate-200">{m.ticketsScanned}</span>
               <span className="text-[9px] font-bold text-rose-400">
@@ -264,12 +273,14 @@ export const RightTelemetry: React.FC = () => {
             </div>
           </div>
 
-          {/* Security Screening Cleared */}
+          {/* Person Check Verified / Mismatches */}
           <div className="p-2 rounded bg-slate-950/80 border border-slate-800 flex flex-col">
-            <span className="text-[9px] text-slate-400">Security Frisking</span>
+            <span className="text-[9px] text-slate-400">Stage 2: Person Check</span>
             <div className="flex items-baseline justify-between mt-1">
-              <span className="text-sm font-bold text-slate-200">{m.securityCleared}</span>
-              <span className="text-[9px] text-amber-400">cleared</span>
+              <span className="text-sm font-bold text-slate-200">{(m as any).personsVerified ?? (m as any).securityCleared ?? 0}</span>
+              <span className="text-[9px] font-bold text-amber-400">
+                {(m as any).personMismatches ?? 0} mismatch
+              </span>
             </div>
           </div>
 
@@ -291,6 +302,61 @@ export const RightTelemetry: React.FC = () => {
               </span>
               <span className="text-[9px] text-slate-400">{m.gateUtilizationPercent}% util</span>
             </div>
+          </div>
+        </div>
+
+        {/* 1.5. Sequential Capacity & Bottleneck Formula Deck */}
+        <div className="p-2.5 rounded-lg bg-slate-950/80 border border-slate-800 flex flex-col gap-1.5 font-mono">
+          <div className="flex items-center justify-between">
+            <span className="text-[10px] font-bold text-slate-300 uppercase tracking-wider flex items-center gap-1.5">
+              <Zap className="w-3.5 h-3.5 text-amber-400" />
+              <span>Sequential Capacity Formula</span>
+            </span>
+            <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-emerald-950 border border-emerald-700 text-emerald-300">
+              C_eff = {m.effectiveCapacityPerMin || 360} p/min
+            </span>
+          </div>
+
+          <div className="grid grid-cols-3 gap-1 text-[10px]">
+            <div
+              className={`p-1.5 rounded border ${
+                m.effectiveCapacityPerMin === m.ticketScanCapacityPerMin
+                  ? 'bg-amber-950/70 border-amber-500 text-amber-200 ring-1 ring-amber-500/50'
+                  : 'bg-slate-900 border-slate-800 text-slate-300'
+              }`}
+            >
+              <div className="text-[8px] text-slate-400">C_scan</div>
+              <div className="font-bold text-xs">{m.ticketScanCapacityPerMin || 600} <span className="text-[8px] font-normal">p/m</span></div>
+            </div>
+            <div
+              className={`p-1.5 rounded border ${
+                m.effectiveCapacityPerMin === m.personCheckCapacityPerMin
+                  ? 'bg-amber-950/70 border-amber-500 text-amber-200 ring-1 ring-amber-500/50'
+                  : 'bg-slate-900 border-slate-800 text-slate-300'
+              }`}
+            >
+              <div className="text-[8px] text-slate-400">C_person</div>
+              <div className="font-bold text-xs">{m.personCheckCapacityPerMin || 240} <span className="text-[8px] font-normal">p/m</span></div>
+            </div>
+            <div
+              className={`p-1.5 rounded border ${
+                m.effectiveCapacityPerMin === m.turnstileCapacityPerMin
+                  ? 'bg-amber-950/70 border-amber-500 text-amber-200 ring-1 ring-amber-500/50'
+                  : 'bg-slate-900 border-slate-800 text-slate-300'
+              }`}
+            >
+              <div className="text-[8px] text-slate-400">C_turnstile</div>
+              <div className="font-bold text-xs">{m.turnstileCapacityPerMin || 360} <span className="text-[8px] font-normal">p/m</span></div>
+            </div>
+          </div>
+          <div className="text-[9px] text-slate-400 text-center">
+            Bottleneck: <span className="text-amber-400 font-bold">
+              {m.effectiveCapacityPerMin === m.personCheckCapacityPerMin
+                ? 'Stage 2 Person Verification'
+                : m.effectiveCapacityPerMin === m.ticketScanCapacityPerMin
+                ? 'Stage 1 Ticket Scan'
+                : 'Inner Turnstiles'}
+            </span>
           </div>
         </div>
 
@@ -356,23 +422,63 @@ export const RightTelemetry: React.FC = () => {
               <AlertTriangle className="w-3.5 h-3.5 text-amber-400" />
               <span>Live Gate Event Log</span>
             </span>
-            <button
-              onClick={clearGateLogs}
-              className="text-[9px] text-slate-500 hover:text-slate-300 flex items-center gap-1 px-1.5 py-0.5 rounded bg-slate-900 border border-slate-800 hover:border-slate-700"
-              title="Clear Event Log"
-            >
-              <Trash2 className="w-3 h-3" />
-              <span>Clear</span>
-            </button>
+
+            {/* Filter Toggle & Clear */}
+            <div className="flex items-center gap-1">
+              <div className="flex items-center rounded bg-slate-900 border border-slate-800 p-0.5 text-[9px]">
+                <button
+                  onClick={() => setLogScope('SELECTED_GATE')}
+                  className={`px-1.5 py-0.5 rounded font-bold transition ${
+                    logScope === 'SELECTED_GATE'
+                      ? 'bg-cyan-950 text-cyan-300 border border-cyan-700'
+                      : 'text-slate-500 hover:text-slate-300'
+                  }`}
+                >
+                  Gate {selectedOuterGateId}
+                </button>
+                <button
+                  onClick={() => setLogScope('VENUE')}
+                  className={`px-1.5 py-0.5 rounded font-bold transition ${
+                    logScope === 'VENUE'
+                      ? 'bg-amber-950 text-amber-300 border border-amber-700'
+                      : 'text-slate-500 hover:text-slate-300'
+                  }`}
+                >
+                  Venue
+                </button>
+              </div>
+
+              <button
+                onClick={clearGateLogs}
+                className="text-[9px] text-slate-500 hover:text-slate-300 flex items-center gap-1 px-1.5 py-0.5 rounded bg-slate-900 border border-slate-800 hover:border-slate-700"
+                title="Clear Event Log"
+              >
+                <Trash2 className="w-3 h-3" />
+                <span>Clear</span>
+              </button>
+            </div>
           </div>
 
           <div className="flex-1 overflow-y-auto max-h-[220px] space-y-1.5 pr-1">
-            {gateLogs.length === 0 ? (
-              <div className="text-[10px] text-slate-500 text-center py-6">
-                No gate incident events recorded yet.
-              </div>
-            ) : (
-              gateLogs.slice(-25).reverse().map((log) => (
+            {(() => {
+              const filtered =
+                logScope === 'SELECTED_GATE'
+                  ? gateLogs.filter(
+                      (l) =>
+                        l.gateId === selectedOuterGateId ||
+                        (gateSpec.connectedInnerGates && gateSpec.connectedInnerGates.includes(l.gateId))
+                    )
+                  : gateLogs;
+
+              if (filtered.length === 0) {
+                return (
+                  <div className="text-[10px] text-slate-500 text-center py-6">
+                    No incident events recorded for {logScope === 'SELECTED_GATE' ? `Gate ${selectedOuterGateId}` : 'the venue'}.
+                  </div>
+                );
+              }
+
+              return filtered.slice(-25).reverse().map((log) => (
                 <div
                   key={log.id}
                   className={`p-1.5 rounded border text-[9px] flex items-start gap-1.5 ${
@@ -396,8 +502,8 @@ export const RightTelemetry: React.FC = () => {
                     <p className="mt-0.5 leading-tight">{log.message}</p>
                   </div>
                 </div>
-              ))
-            )}
+              ));
+            })()}
           </div>
         </div>
       </div>

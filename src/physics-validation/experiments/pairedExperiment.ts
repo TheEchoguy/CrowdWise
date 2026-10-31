@@ -25,7 +25,12 @@ export function runPairedCounterfactualExperiment(
   // Generate immutable deterministic arrival schedule
   const scenarioConfig: ScenarioConfig = {
     id: 'paired_experiment_config',
-    type: 'NORMAL',
+    type: 'NORMAL_INGRESS',
+    expectedAttendance: 35000,
+    walkingSpeed: 1.34,
+    turnstileServiceTime: 1.0,
+    selectedOuterGates: ['E11', 'E12', 'E13'],
+    selectedInnerGates: ['G14', 'G15'],
     name: 'Paired Verification Scenario',
     description: 'Deterministic 480 p/m surge ingress for counterfactual testing',
     seed,

@@ -30,15 +30,23 @@ import { ThreeZoneMonitor } from '../../engine/ThreeZoneMonitor';
 import { SpatialGrid } from '../../engine/SpatialGrid';
 import { MicroscopicGateCanvas } from './MicroscopicGateCanvas';
 import { StadiumDensityHeatmap, DensityHotspot, FlowVector } from '../../stadium/visualization/DensityHeatmap';
+import { getConnectedInnerGates, getConnectedOuterGates } from '../../stadium/network/gateConnectivity';
 import {
   ZoomIn,
   ZoomOut,
   RotateCcw,
   Layers,
-  Flame,
   Users,
-  Compass
+  Compass,
+  Activity
 } from 'lucide-react';
+
+const getFruinDensityColor = (density: number): string => {
+  if (density >= 3.0) return '#ef4444'; // Red: > 3.0 p/m² Severe Compression
+  if (density >= 2.2) return '#f97316'; // Orange: 2.2 - 3.0 p/m² Constrained
+  if (density >= 1.5) return '#eab308'; // Yellow: 1.5 - 2.2 p/m² Laminar Warning
+  return '#10b981'; // Green: < 1.5 p/m² Free Flow
+};
 
 export const SimulationCanvas: React.FC = () => {
   const svgRef = useRef<SVGSVGElement | null>(null);
@@ -397,19 +405,19 @@ export const SimulationCanvas: React.FC = () => {
             </button>
           </div>
 
-          {/* Visualization Layer Switcher (Heatmap, Agents, Hybrid, Routes) */}
+          {/* Visualization Layer Switcher (Density Points, Agents, Hybrid, Routes Only) */}
           <div className="flex items-center rounded-lg bg-slate-950 border border-slate-800 p-0.5 ml-1">
             <button
-              onClick={() => setHeatmapVisualizationMode('HEATMAP')}
+              onClick={() => setHeatmapVisualizationMode('DENSITY_POINTS')}
               className={`px-2 py-0.5 text-[10px] font-bold rounded flex items-center gap-1 transition ${
-                heatmapVisualizationMode === 'HEATMAP'
-                  ? 'bg-amber-950 text-amber-300 border border-amber-700'
+                heatmapVisualizationMode === 'DENSITY_POINTS'
+                  ? 'bg-emerald-950 text-emerald-300 border border-emerald-700 shadow-sm'
                   : 'text-slate-400 hover:text-slate-200'
               }`}
-              title="Spatial Crowd Density Heatmap"
+              title="Crisp Density Point-Cloud (Fruin Bands)"
             >
-              <Flame className="w-3 h-3 text-amber-400" />
-              <span>Heatmap</span>
+              <Activity className="w-3 h-3 text-emerald-400" />
+              <span>Density Points</span>
             </button>
             <button
               onClick={() => setHeatmapVisualizationMode('AGENTS')}
@@ -427,12 +435,12 @@ export const SimulationCanvas: React.FC = () => {
               onClick={() => setHeatmapVisualizationMode('HYBRID')}
               className={`px-2 py-0.5 text-[10px] font-bold rounded flex items-center gap-1 transition ${
                 heatmapVisualizationMode === 'HYBRID'
-                  ? 'bg-emerald-950 text-emerald-300 border border-emerald-700'
+                  ? 'bg-amber-950 text-amber-300 border border-amber-700'
                   : 'text-slate-400 hover:text-slate-200'
               }`}
               title="Density Heatmap + Representative Agents"
             >
-              <Layers className="w-3 h-3 text-emerald-400" />
+              <Layers className="w-3 h-3 text-amber-400" />
               <span>Hybrid</span>
             </button>
             <button
@@ -445,7 +453,7 @@ export const SimulationCanvas: React.FC = () => {
               title="Routes and Geometry Only"
             >
               <Compass className="w-3 h-3 text-purple-400" />
-              <span>Routes</span>
+              <span>Routes Only</span>
             </button>
           </div>
         </div>
@@ -546,6 +554,8 @@ export const SimulationCanvas: React.FC = () => {
 
           {/* ─── 4. PEDESTRIAN INGRESS PATHWAYS ───────────────────────── */}
           <PedestrianRouteLayer
+            selectedOuterGateId={selectedOuterGateId}
+            selectedInnerGateId={selectedInnerGateId}
             selectedGateId={selectedOuterGateId || selectedInnerGateId || null}
           />
 
@@ -553,7 +563,9 @@ export const SimulationCanvas: React.FC = () => {
           <g id="layer-inner-turnstiles">
             {CHINNASWAMY_INNER_GATES.map((ig) => {
               const isSelected = selectedInnerGateId === ig.id;
-              const isLinked = activeOuterGate?.connectedInnerGates.includes(ig.id) || false;
+              const isLinked = selectedOuterGateId
+                ? getConnectedInnerGates(selectedOuterGateId).includes(ig.id)
+                : false;
 
               return (
                 <InnerGateMarker
@@ -563,9 +575,7 @@ export const SimulationCanvas: React.FC = () => {
                   isLinkedToSelectedOuter={isLinked}
                   onSelect={(gate) => {
                     setSelectedInnerGateId(gate.id);
-                    if (gate.connectedOuterGates[0]) {
-                      setSelectedOuterGateId(gate.connectedOuterGates[0]);
-                    }
+                    setSelectedOuterGateId(null);
                   }}
                 />
               );
@@ -576,7 +586,9 @@ export const SimulationCanvas: React.FC = () => {
           <g id="layer-outer-gates">
             {CHINNASWAMY_OUTER_GATES.map((og) => {
               const isSelected = selectedOuterGateId === og.id;
-              const isLinked = activeInnerGate?.connectedOuterGates.includes(og.id) || false;
+              const isLinked = selectedInnerGateId
+                ? getConnectedOuterGates(selectedInnerGateId).includes(og.id)
+                : false;
 
               return (
                 <OuterGateMarker
@@ -586,9 +598,7 @@ export const SimulationCanvas: React.FC = () => {
                   isLinkedToSelectedInner={isLinked}
                   onSelect={(gate) => {
                     setSelectedOuterGateId(gate.id);
-                    if (gate.connectedInnerGates[0]) {
-                      setSelectedInnerGateId(gate.connectedInnerGates[0]);
-                    }
+                    setSelectedInnerGateId(null);
                   }}
                 />
               );
@@ -662,27 +672,32 @@ export const SimulationCanvas: React.FC = () => {
             </g>
           ))}
 
-          {/* ─── 7. ANIMATED PEDESTRIAN AGENTS (MICROSCOPIC SFM) ──────── */}
+          {/* ─── 7. ANIMATED PEDESTRIAN AGENTS (MICROSCOPIC SFM & POINT-CLOUD) ──── */}
           {heatmapVisualizationMode !== 'ROUTES_ONLY' && (
             <g id="layer-pedestrian-agents" opacity={heatmapVisualizationMode === 'HEATMAP' ? 0.35 : 1.0}>
               {agentsState.map((ag) => {
-                // Heading vector
                 const spd = Math.hypot(ag.vx, ag.vy);
-                const headingTailX = spd > 1 ? ag.x - (ag.vx / spd) * 6 : ag.x;
-                const headingTailY = spd > 1 ? ag.y - (ag.vy / spd) * 6 : ag.y;
+                const isDensityPoints = heatmapVisualizationMode === 'DENSITY_POINTS';
+                const fillColor = isDensityPoints ? getFruinDensityColor(ag.density) : ag.color;
+                const r = isDensityPoints
+                  ? (simulationDisplayMode === 'SECTOR_VIEW' ? 2.5 : 1.8)
+                  : (ag.isBeingServiced ? 5.5 : ag.radius);
+
+                const headingTailX = spd > 1 ? ag.x - (ag.vx / spd) * 5 : ag.x;
+                const headingTailY = spd > 1 ? ag.y - (ag.vy / spd) * 5 : ag.y;
 
                 return (
                   <g key={ag.id} opacity={ag.clearanceFade ?? 1.0}>
                     {/* Directional Velocity Tail */}
-                    {spd > 2 && (
+                    {spd > 1 && (
                       <line
                         x1={ag.x}
                         y1={ag.y}
                         x2={headingTailX}
                         y2={headingTailY}
-                        stroke={ag.color}
-                        strokeWidth={1.5}
-                        strokeOpacity={0.6}
+                        stroke={fillColor}
+                        strokeWidth={isDensityPoints ? 1.0 : 1.5}
+                        strokeOpacity={isDensityPoints ? 0.45 : 0.6}
                         strokeLinecap="round"
                       />
                     )}
@@ -691,23 +706,22 @@ export const SimulationCanvas: React.FC = () => {
                     <circle
                       cx={ag.x}
                       cy={ag.y}
-                      r={ag.isBeingServiced ? 5.5 : ag.radius}
-                      fill={ag.color}
-                      stroke={ag.isRejected ? '#ffffff' : '#020617'}
-                      strokeWidth={ag.isRejected ? 1.4 : 0.8}
-                      className={ag.density > 4.5 ? 'animate-pulse' : undefined}
+                      r={r}
+                      fill={fillColor}
+                      stroke={ag.isRejected ? '#ffffff' : isDensityPoints ? '#022c22' : '#020617'}
+                      strokeWidth={isDensityPoints ? 0.5 : ag.isRejected ? 1.4 : 0.8}
                     />
 
                     {/* High Density Compressive Hazard Ring */}
-                    {ag.density > 4.5 && (
+                    {ag.density >= 3.0 && (
                       <circle
                         cx={ag.x}
                         cy={ag.y}
-                        r={ag.radius + 3.5}
+                        r={r + (isDensityPoints ? 2.5 : 3.5)}
                         fill="none"
-                        stroke="#f43f5e"
-                        strokeWidth={1}
-                        strokeOpacity={0.8}
+                        stroke="#ef4444"
+                        strokeWidth={0.8}
+                        strokeOpacity={0.75}
                         className="animate-ping"
                       />
                     )}

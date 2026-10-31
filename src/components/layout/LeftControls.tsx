@@ -23,7 +23,9 @@ import {
   CheckCircle2,
   RefreshCw,
   Compass,
-  MapPin
+  MapPin,
+  FlaskConical,
+  Activity
 } from 'lucide-react';
 
 export const LeftControls: React.FC = () => {
@@ -52,11 +54,13 @@ export const LeftControls: React.FC = () => {
   const autonomousRerouteActive = useSimulationStore((s) => s.autonomousRerouteActive);
   const toggleAutonomousReroute = useSimulationStore((s) => s.toggleAutonomousReroute);
 
-  // Phase 2.1 Microscopic Gate Controls
+  // Phase 2.1 & 2.2 Microscopic Gate Controls
   const ticketScanLatency = useSimulationStore((s) => s.ticketScanLatency);
   const setTicketScanLatency = useSimulationStore((s) => s.setTicketScanLatency);
-  const securityScreeningLatency = useSimulationStore((s) => s.securityScreeningLatency);
-  const setSecurityScreeningLatency = useSimulationStore((s) => s.setSecurityScreeningLatency);
+  const personCheckLatency = useSimulationStore((s) => s.personCheckLatency);
+  const setPersonCheckLatency = useSimulationStore((s) => s.setPersonCheckLatency);
+  const personMismatchRate = useSimulationStore((s) => s.personMismatchRate);
+  const setPersonMismatchRate = useSimulationStore((s) => s.setPersonMismatchRate);
   const ticketRejectionRate = useSimulationStore((s) => s.ticketRejectionRate);
   const setTicketRejectionRate = useSimulationStore((s) => s.setTicketRejectionRate);
   const auxiliaryBypassEnabled = useSimulationStore((s) => s.auxiliaryBypassEnabled);
@@ -65,8 +69,6 @@ export const LeftControls: React.FC = () => {
   // Sliders & Calibration
   const inflowRate = useSimulationStore((s) => s.inflowRate);
   const setInflowRate = useSimulationStore((s) => s.setInflowRate);
-  const baggageScanLatency = useSimulationStore((s) => s.baggageScanLatency);
-  const setBaggageScanLatency = useSimulationStore((s) => s.setBaggageScanLatency);
   const turnstileScanLatency = useSimulationStore((s) => s.turnstileScanLatency);
   const setTurnstileScanLatency = useSimulationStore((s) => s.setTurnstileScanLatency);
   const walkingSpeed = useSimulationStore((s) => s.walkingSpeed);
@@ -84,6 +86,8 @@ export const LeftControls: React.FC = () => {
   const setTimeScale = useSimulationStore((s) => s.setTimeScale);
   const triggerReset = useSimulationStore((s) => s.triggerReset);
   const triggerMetroPulse = useSimulationStore((s) => s.triggerMetroPulse);
+  const toggleScenarioLab = useSimulationStore((s) => s.toggleScenarioLab);
+  const toggleSafetyIntelligence = useSimulationStore((s) => s.toggleSafetyIntelligence);
 
   const sectors: { id: RoadSectorId; name: string; tag: string; isRestricted: boolean }[] = [
     { id: 'CUBBON_ROAD', name: 'Cubbon Road (North)', tag: 'Minsk Sq ──► BRV', isRestricted: false },
@@ -195,6 +199,9 @@ export const LeftControls: React.FC = () => {
       [gateId]: next
     }));
     setAppliedFeedback(false);
+    if (simulationDisplayMode === 'GATE_VIEW') {
+      useSimulationStore.getState().setSectorTurnstileCount(gateId, next);
+    }
   };
 
   const hasPendingChanges = displayInnerGates.some((ig) => {
@@ -286,6 +293,22 @@ export const LeftControls: React.FC = () => {
             );
           })}
         </div>
+
+        <button
+          onClick={toggleScenarioLab}
+          className="w-full mt-2 py-1.5 px-2 rounded-lg bg-gradient-to-r from-purple-950/80 to-indigo-950/80 border border-purple-600/70 hover:from-purple-900/80 hover:to-indigo-900/80 text-purple-300 text-[10px] font-mono font-bold flex items-center justify-center gap-1.5 shadow-sm transition"
+        >
+          <FlaskConical className="w-3.5 h-3.5 text-purple-400" />
+          <span>Launch Scenario Lab (Scenarios A–G)</span>
+        </button>
+
+        <button
+          onClick={toggleSafetyIntelligence}
+          className="w-full mt-1.5 py-1.5 px-2 rounded-lg bg-gradient-to-r from-indigo-950/80 to-cyan-950/80 border border-indigo-600/70 hover:from-indigo-900/80 hover:to-cyan-900/80 text-cyan-300 text-[10px] font-mono font-bold flex items-center justify-center gap-1.5 shadow-sm transition"
+        >
+          <Activity className="w-3.5 h-3.5 text-cyan-400" />
+          <span>Launch Safety Intelligence Dashboard</span>
+        </button>
       </div>
 
       {/* 2. Top View Switcher Tabs (Full Stadium 360°, Sector View, Gate View) */}
@@ -610,27 +633,27 @@ export const LeftControls: React.FC = () => {
           </div>
         </div>
 
-        {/* Outer Gate Frisking Latency */}
+        {/* Stage 2: Person Check Latency */}
         <div className="space-y-1">
           <div className="flex justify-between items-center text-xs">
-            <span className="font-semibold text-slate-300">Outer Baggage Frisking</span>
+            <span className="font-semibold text-slate-300">Stage 2: Person Check</span>
             <span className="font-mono text-xs text-amber-400 font-bold px-1.5 py-0.5 rounded bg-slate-900 border border-slate-800">
-              {baggageScanLatency.toFixed(1)}s / person
+              {personCheckLatency.toFixed(1)}s / check
             </span>
           </div>
           <input
             type="range"
-            min="1.0"
-            max="8.0"
-            step="0.5"
-            value={baggageScanLatency}
-            onChange={(e) => setBaggageScanLatency(Number(e.target.value))}
+            min="0.5"
+            max="3.0"
+            step="0.1"
+            value={personCheckLatency}
+            onChange={(e) => setPersonCheckLatency(Number(e.target.value))}
             className="w-full h-1.5 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-amber-500"
           />
           <div className="flex justify-between text-[10px] text-slate-500 font-mono">
-            <span>1.0s (Express)</span>
-            <span>3.5s (Nominal)</span>
-            <span>8.0s (Strict)</span>
+            <span>0.5s (Rapid ID)</span>
+            <span>1.0s (Nominal)</span>
+            <span>3.0s (Manual)</span>
           </div>
         </div>
 
@@ -685,27 +708,51 @@ export const LeftControls: React.FC = () => {
               </div>
             </div>
 
-            {/* Security Frisking Latency */}
+            {/* Stage 2: Person Check Latency */}
             <div className="space-y-1">
               <div className="flex justify-between items-center text-xs">
-                <span className="font-semibold text-amber-300">Security Frisking Latency</span>
+                <span className="font-semibold text-amber-300">Stage 2: Person Check Latency</span>
                 <span className="font-mono text-xs text-amber-400 font-bold px-1.5 py-0.5 rounded bg-slate-900 border border-slate-800">
-                  {securityScreeningLatency.toFixed(1)}s / person
+                  {personCheckLatency.toFixed(1)}s / person
                 </span>
               </div>
               <input
                 type="range"
-                min="1.0"
-                max="5.0"
-                step="0.5"
-                value={securityScreeningLatency}
-                onChange={(e) => setSecurityScreeningLatency(Number(e.target.value))}
+                min="0.5"
+                max="3.0"
+                step="0.1"
+                value={personCheckLatency}
+                onChange={(e) => setPersonCheckLatency(Number(e.target.value))}
                 className="w-full h-1.5 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-amber-500"
               />
               <div className="flex justify-between text-[10px] text-slate-500 font-mono">
-                <span>1.0s (Rapid)</span>
-                <span>2.0s (Standard)</span>
-                <span>5.0s (Strict)</span>
+                <span>0.5s (Express)</span>
+                <span>1.0s (Nominal)</span>
+                <span>3.0s (Strict)</span>
+              </div>
+            </div>
+
+            {/* Synthetic Attendee ID Mismatch Rate */}
+            <div className="space-y-1">
+              <div className="flex justify-between items-center text-xs">
+                <span className="font-semibold text-purple-300">Attendee ID Mismatch Rate</span>
+                <span className="font-mono text-xs text-purple-400 font-bold px-1.5 py-0.5 rounded bg-slate-900 border border-slate-800">
+                  {(personMismatchRate * 100).toFixed(0)}%
+                </span>
+              </div>
+              <input
+                type="range"
+                min="0.0"
+                max="0.15"
+                step="0.01"
+                value={personMismatchRate}
+                onChange={(e) => setPersonMismatchRate(Number(e.target.value))}
+                className="w-full h-1.5 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-purple-500"
+              />
+              <div className="flex justify-between text-[10px] text-slate-500 font-mono">
+                <span>0% (Matched)</span>
+                <span>3% (Nominal)</span>
+                <span>15% (Strict Audit)</span>
               </div>
             </div>
 

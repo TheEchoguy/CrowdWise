@@ -3,12 +3,16 @@ import { CHINNASWAMY_PEDESTRIAN_ROUTES } from '../data/pedestrianRoutes';
 import { PedestrianRoute } from '../types/stadium';
 
 interface PedestrianRouteLayerProps {
-  selectedGateId: string | null;
+  selectedGateId?: string | null;
+  selectedOuterGateId?: string | null;
+  selectedInnerGateId?: string | null;
   onSelectRoute?: (route: PedestrianRoute) => void;
 }
 
 export const PedestrianRouteLayer: React.FC<PedestrianRouteLayerProps> = ({
   selectedGateId,
+  selectedOuterGateId,
+  selectedInnerGateId,
   onSelectRoute
 }) => {
   return (
@@ -51,10 +55,11 @@ export const PedestrianRouteLayer: React.FC<PedestrianRouteLayerProps> = ({
 
       {CHINNASWAMY_PEDESTRIAN_ROUTES.map((route) => {
         const isConnectedToSelected =
-          selectedGateId &&
-          (route.outerGateId === selectedGateId || route.innerGateId === selectedGateId);
+          (selectedOuterGateId && route.outerGateId === selectedOuterGateId) ||
+          (selectedInnerGateId && route.innerGateId === selectedInnerGateId) ||
+          (selectedGateId && (route.outerGateId === selectedGateId || route.innerGateId === selectedGateId));
 
-        const isAnyGateSelected = Boolean(selectedGateId);
+        const isAnyGateSelected = Boolean(selectedOuterGateId || selectedInnerGateId || selectedGateId);
 
         // Path data
         const pathData = route.points

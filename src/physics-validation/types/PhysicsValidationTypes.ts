@@ -97,7 +97,7 @@ export interface FundamentalDiagramResult {
   densityFlowCurveDeviation: number;
   validationStatus: ValidationStatus;
   statusRationale: string;
-  evidence: ValidationEvidence;
+  evidence?: ValidationEvidence;
 }
 
 export interface DirectionalInteractionVector {

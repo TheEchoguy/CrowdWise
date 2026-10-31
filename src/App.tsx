@@ -5,6 +5,8 @@ import { RightTelemetry } from './components/layout/RightTelemetry';
 import { SimulationCanvas } from './components/canvas/SimulationCanvas';
 import { DecisionModal } from './components/layout/DecisionModal';
 import { BenchmarkModal } from './components/layout/BenchmarkModal';
+import { ScenarioLabModal } from './components/experiment/ScenarioLabModal';
+import { SafetyIntelligenceDashboard } from './components/analytics/SafetyIntelligenceDashboard';
 import { useSimulationStore } from './state/useSimulationStore';
 import { KSCA_STADIUM_SECTORS } from './engine/ChinnaswamyData';
 import { StadiumBlueprint } from './stadium/components/StadiumBlueprint';
@@ -75,6 +77,8 @@ export const App: React.FC = () => {
         <StadiumBlueprint onSwitchToSimulation={() => setAppMode('SIMULATION')} />
         <DecisionModal />
         <BenchmarkModal isOpen={isBenchmarkOpen} onClose={toggleBenchmark} />
+        <ScenarioLabModal />
+        <SafetyIntelligenceDashboard />
       </ErrorBoundary>
     );
   }
@@ -138,9 +142,11 @@ export const App: React.FC = () => {
         </section>
       </main>
 
-      {/* 3. Event Safety Decision Modal & Performance Benchmark Modal */}
+      {/* 3. Event Safety Decision Modal & Performance Benchmark Modal & Scenario Lab */}
       <DecisionModal />
       <BenchmarkModal isOpen={isBenchmarkOpen} onClose={toggleBenchmark} />
+      <ScenarioLabModal />
+      <SafetyIntelligenceDashboard />
     </div>
   );
 };

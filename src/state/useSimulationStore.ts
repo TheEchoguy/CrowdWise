@@ -16,6 +16,11 @@ import { VerdictReport } from '../engine/SafetyVerdictEngine';
 import { ComparativeAuditReport } from '../engine/DisplacementDetector';
 import { CrowdInteractionAnalysis } from '../engine/CrowdInteractionAnalyzer';
 import { ControllerDecisions, InterventionType } from '../engine/SafetyController';
+import { ControlledExperimentRunner, ExperimentRecord } from '../engine/ControlledExperimentRunner';
+import { PredictionHorizonSec } from '../engine/PredictiveCongestionEngine';
+import { SafetyRecommendation } from '../engine/SafetyRecommendationEngine';
+import { BenchmarkTrialResult, BatchBenchmarkingEngine } from '../engine/BatchBenchmarkingEngine';
+import { getConnectedInnerGates, getConnectedOuterGates } from '../stadium/network/gateConnectivity';
 import {
   HeatmapVisualizationMode,
   MicroGateMetrics,
@@ -157,22 +162,85 @@ export interface SimulationStoreState {
   setControllerDecisions: (decisions: ControllerDecisions | null) => void;
   triggerIntervention: (type: InterventionType, enabled?: boolean) => void;
 
-  // Phase 2.1 Microscopic Gate & Heatmap Actions
+  // Phase 2.1 & 2.2 Microscopic Gate & Point-Cloud Actions
   heatmapVisualizationMode: HeatmapVisualizationMode;
   setHeatmapVisualizationMode: (mode: HeatmapVisualizationMode) => void;
   ticketScanLatency: number;
   setTicketScanLatency: (latency: number) => void;
+  personCheckLatency: number;
+  setPersonCheckLatency: (latency: number) => void;
+  personMismatchRate: number;
+  setPersonMismatchRate: (rate: number) => void;
   securityScreeningLatency: number;
   setSecurityScreeningLatency: (latency: number) => void;
   ticketRejectionRate: number;
   setTicketRejectionRate: (rate: number) => void;
   auxiliaryBypassEnabled: boolean;
   toggleAuxiliaryBypass: () => void;
+  addTurnstileCounter: (gateId: string) => void;
+  removeTurnstileCounter: (gateId: string) => boolean;
   microGateMetrics: MicroGateMetrics | null;
   setMicroGateMetrics: (metrics: MicroGateMetrics) => void;
   gateLogs: GateLogEvent[];
   addGateLog: (level: 'INFO' | 'WARNING' | 'ALERT', message: string, gateId: string) => void;
   clearGateLogs: () => void;
+
+  // Phase 3: Predictive Crowd Safety & Scenario Lab
+  isScenarioLabOpen: boolean;
+  toggleScenarioLab: () => void;
+  setIsScenarioLabOpen: (open: boolean) => void;
+  experimentHistory: ExperimentRecord[];
+  activeExperimentRecord: ExperimentRecord | null;
+  setActiveExperimentRecord: (record: ExperimentRecord | null) => void;
+  runControlledExperiment: (
+    config?: ScenarioConfig,
+    interventions?: InterventionType[],
+    primaryGate?: string
+  ) => ExperimentRecord;
+
+  // Phase 4: Safety Intelligence & Operational Decision Support
+  isSafetyIntelligenceOpen: boolean;
+  toggleSafetyIntelligence: () => void;
+  setIsSafetyIntelligenceOpen: (open: boolean) => void;
+  activeIntelligenceTab:
+    | 'OVERVIEW'
+    | 'PREDICTION'
+    | 'RECOMMENDATIONS'
+    | 'DEPENDENCIES'
+    | 'COMPARISONS'
+    | 'REPLAY'
+    | 'BENCHMARK'
+    | 'BRIEF';
+  setActiveIntelligenceTab: (
+    tab:
+      | 'OVERVIEW'
+      | 'PREDICTION'
+      | 'RECOMMENDATIONS'
+      | 'DEPENDENCIES'
+      | 'COMPARISONS'
+      | 'REPLAY'
+      | 'BENCHMARK'
+      | 'BRIEF'
+  ) => void;
+  inspectedGateId: string | null;
+  setInspectedGateId: (id: string | null) => void;
+  predictionHorizonSec: PredictionHorizonSec;
+  setPredictionHorizonSec: (horizon: PredictionHorizonSec) => void;
+  recommendations: SafetyRecommendation[];
+  setRecommendations: (recs: SafetyRecommendation[]) => void;
+  approveRecommendation: (id: string) => void;
+  dismissRecommendation: (id: string) => void;
+  activeReplayRecord: ExperimentRecord | null;
+  setActiveReplayRecord: (record: ExperimentRecord | null) => void;
+  replayPlaybackTime: number;
+  setReplayPlaybackTime: (time: number | ((prev: number) => number)) => void;
+  isReplayPlaying: boolean;
+  toggleReplayPlay: () => void;
+  replaySpeed: number;
+  setReplaySpeed: (speed: number) => void;
+  benchmarkSuiteResults: BenchmarkTrialResult[];
+  setBenchmarkSuiteResults: (results: BenchmarkTrialResult[]) => void;
+  runBatchBenchmarkSuite: () => BenchmarkTrialResult[];
 }
 
 export const useSimulationStore = create<SimulationStoreState>((set) => ({
@@ -194,11 +262,28 @@ export const useSimulationStore = create<SimulationStoreState>((set) => ({
 
   // Master Safety Workflow Initial State
   activeExperiment: 'NORMAL',
-  scenarioConfig: PRESET_SCENARIOS.NORMAL,
+  scenarioConfig: PRESET_SCENARIOS.NORMAL_INGRESS,
   currentVerdict: null,
   comparativeAudit: null,
   interactionAnalysis: null,
   controllerDecisions: null,
+
+  // Phase 3: Predictive Crowd Safety & Controlled Experimentation Initial State
+  isScenarioLabOpen: false,
+  experimentHistory: [],
+  activeExperimentRecord: null,
+
+  // Phase 4: Safety Intelligence & Operational Decision Support Initial State
+  isSafetyIntelligenceOpen: false,
+  activeIntelligenceTab: 'OVERVIEW',
+  inspectedGateId: 'E22',
+  predictionHorizonSec: 60,
+  recommendations: [],
+  activeReplayRecord: null,
+  replayPlaybackTime: 0,
+  isReplayPlaying: false,
+  replaySpeed: 1,
+  benchmarkSuiteResults: [],
 
   // KSCA 2-Tier Ground Truth Initial State
   currentView: 'MACRO_STADIUM',
@@ -283,20 +368,93 @@ export const useSimulationStore = create<SimulationStoreState>((set) => ({
     })),
 
   setSimulationDisplayMode: (simulationDisplayMode) => set({ simulationDisplayMode }),
-  setSelectedOuterGateId: (selectedOuterGateId) => set({ selectedOuterGateId }),
-  setSelectedInnerGateId: (selectedInnerGateId) => set({ selectedInnerGateId }),
+  setSelectedOuterGateId: (selectedOuterGateId) =>
+    set((state) => {
+      if (!selectedOuterGateId) return { selectedOuterGateId: null };
+      const connectedInner = getConnectedInnerGates(selectedOuterGateId);
+      const newInner =
+        state.selectedInnerGateId && connectedInner.includes(state.selectedInnerGateId)
+          ? state.selectedInnerGateId
+          : connectedInner[0] || null;
+      return {
+        selectedOuterGateId,
+        selectedInnerGateId: newInner
+      };
+    }),
+  setSelectedInnerGateId: (selectedInnerGateId) =>
+    set((state) => {
+      if (!selectedInnerGateId) return { selectedInnerGateId: null };
+      const connectedOuter = getConnectedOuterGates(selectedInnerGateId);
+      const newOuter =
+        state.selectedOuterGateId && connectedOuter.includes(state.selectedOuterGateId)
+          ? state.selectedOuterGateId
+          : connectedOuter[0] || null;
+      return {
+        selectedInnerGateId,
+        selectedOuterGateId: newOuter
+      };
+    }),
 
-  // Phase 2.1 Microscopic Gate & Heatmap State & Actions
-  heatmapVisualizationMode: 'HEATMAP',
+  // Phase 2.1 & 2.2 Microscopic Gate & Heatmap State & Actions
+  heatmapVisualizationMode: 'DENSITY_POINTS',
   setHeatmapVisualizationMode: (heatmapVisualizationMode) => set({ heatmapVisualizationMode }),
   ticketScanLatency: 0.4,
   setTicketScanLatency: (ticketScanLatency) => set({ ticketScanLatency }),
-  securityScreeningLatency: 2.0,
-  setSecurityScreeningLatency: (securityScreeningLatency) => set({ securityScreeningLatency }),
+  personCheckLatency: 1.0,
+  setPersonCheckLatency: (personCheckLatency) =>
+    set({ personCheckLatency, securityScreeningLatency: personCheckLatency, baggageScanLatency: personCheckLatency }),
+  personMismatchRate: 0.03,
+  setPersonMismatchRate: (personMismatchRate) => set({ personMismatchRate }),
+  securityScreeningLatency: 1.0,
+  setSecurityScreeningLatency: (securityScreeningLatency) =>
+    set({ securityScreeningLatency, personCheckLatency: securityScreeningLatency, baggageScanLatency: securityScreeningLatency }),
   ticketRejectionRate: 0.05,
   setTicketRejectionRate: (ticketRejectionRate) => set({ ticketRejectionRate }),
   auxiliaryBypassEnabled: true,
   toggleAuxiliaryBypass: () => set((state) => ({ auxiliaryBypassEnabled: !state.auxiliaryBypassEnabled })),
+  addTurnstileCounter: (gateId: string) =>
+    set((state) => {
+      const current = state.sectorTurnstileOverrides[gateId] ?? 4;
+      const updated = Math.min(12, current + 1);
+      const log = {
+        id: `log-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+        timestamp: new Date().toLocaleTimeString('en-US', { hour12: false }),
+        level: 'INFO' as const,
+        message: `Turnstile +1: Inner Bank ${gateId} capacity scaled to ${updated * 60} p/min (${updated} active)`,
+        gateId
+      };
+      return {
+        sectorTurnstileOverrides: {
+          ...state.sectorTurnstileOverrides,
+          [gateId]: updated
+        },
+        gateLogs: [log, ...state.gateLogs.slice(0, 49)]
+      };
+    }),
+  removeTurnstileCounter: (gateId: string) => {
+    let removed = false;
+    set((state) => {
+      const current = state.sectorTurnstileOverrides[gateId] ?? 4;
+      if (current <= 1) return state;
+      const updated = current - 1;
+      removed = true;
+      const log = {
+        id: `log-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+        timestamp: new Date().toLocaleTimeString('en-US', { hour12: false }),
+        level: 'INFO' as const,
+        message: `Turnstile -1: Inner Bank ${gateId} scaled down to ${updated * 60} p/min (${updated} active)`,
+        gateId
+      };
+      return {
+        sectorTurnstileOverrides: {
+          ...state.sectorTurnstileOverrides,
+          [gateId]: updated
+        },
+        gateLogs: [log, ...state.gateLogs.slice(0, 49)]
+      };
+    });
+    return removed;
+  },
   microGateMetrics: null,
   setMicroGateMetrics: (microGateMetrics) => set({ microGateMetrics }),
   gateLogs: [
@@ -695,13 +853,22 @@ export const useSimulationStore = create<SimulationStoreState>((set) => ({
 
   // Master Safety Workflow Implementations
   setExperiment: (type) => {
-    const config = PRESET_SCENARIOS[type];
+    const config = (PRESET_SCENARIOS as any)[type] || PRESET_SCENARIOS.NORMAL_INGRESS;
     set((state) => ({
       activeExperiment: type,
       scenarioConfig: config,
       inflowRate: config.baseInflowRate,
-      counterFlowActive: type === 'COUNTER_FLOW',
-      scannerFailureActive: type === 'GATE_FAILURE',
+      counterFlowActive:
+        type === 'COUNTER_FLOW' ||
+        type === 'COUNTER_FLOW_SHOCK' ||
+        type === 'TICKET_REJECTION_SHOCKWAVE' ||
+        type === 'COMBINED_EMERGENCY',
+      scannerFailureActive:
+        type === 'GATE_FAILURE' ||
+        type === 'OUTER_GATE_FAILURE' ||
+        type === 'TURNSTILE_FAILURE' ||
+        type === 'COMBINED_EMERGENCY',
+      ticketRejectionRate: type === 'TICKET_REJECTION_SHOCKWAVE' ? 0.15 : 0.05,
       resetSignal: state.resetSignal + 1
     }));
   },
@@ -729,7 +896,95 @@ export const useSimulationStore = create<SimulationStoreState>((set) => ({
         const next = enabled !== undefined ? enabled : !state.sQueueEnabled;
         return { sQueueEnabled: next };
       }
+      if (type === 'TURNSTILE_LOAD_BALANCING') {
+        return {};
+      }
       return {};
     });
+  },
+
+  // Phase 3: Scenario Lab Actions
+  toggleScenarioLab: () => set((state) => ({ isScenarioLabOpen: !state.isScenarioLabOpen })),
+  setIsScenarioLabOpen: (isScenarioLabOpen) => set({ isScenarioLabOpen }),
+  setActiveExperimentRecord: (activeExperimentRecord) => set({ activeExperimentRecord }),
+  runControlledExperiment: (customConfig, interventions, primaryGate) => {
+    const state = useSimulationStore.getState();
+    const config = customConfig || state.scenarioConfig || PRESET_SCENARIOS.NORMAL_INGRESS;
+    const activeInterventions = interventions || (
+      [
+        state.bafflesActive ? 'METERING' : null,
+        (state.overflowRerouteActive || state.auxGateActive) ? 'REROUTING' : null,
+        state.dividerActive ? 'DIRECTIONAL_SEPARATION' : null,
+        state.sQueueEnabled ? 'QUEUE_MANAGEMENT' : null,
+      ].filter(Boolean) as InterventionType[]
+    );
+    const gate = primaryGate || state.selectedOuterGateId || 'E22';
+
+    const record = ControlledExperimentRunner.runExperiment(
+      config,
+      activeInterventions.length > 0 ? activeInterventions : ['METERING', 'QUEUE_MANAGEMENT'],
+      gate
+    );
+
+    set((s) => ({
+      activeExperimentRecord: record,
+      experimentHistory: [record, ...s.experimentHistory.slice(0, 19)],
+      currentVerdict: record.safetyVerdict,
+      comparativeAudit: record.displacementResults
+    }));
+
+    return record;
+  },
+
+  // Phase 4: Safety Intelligence & Decision Support Actions
+  toggleSafetyIntelligence: () =>
+    set((state) => ({ isSafetyIntelligenceOpen: !state.isSafetyIntelligenceOpen })),
+  setIsSafetyIntelligenceOpen: (isSafetyIntelligenceOpen) => set({ isSafetyIntelligenceOpen }),
+  setActiveIntelligenceTab: (activeIntelligenceTab) => set({ activeIntelligenceTab }),
+  setInspectedGateId: (inspectedGateId) => set({ inspectedGateId }),
+  setPredictionHorizonSec: (predictionHorizonSec) => set({ predictionHorizonSec }),
+  setRecommendations: (recommendations) => set({ recommendations }),
+  approveRecommendation: (id) =>
+    set((state) => {
+      const rec = state.recommendations.find((r) => r.id === id);
+      if (!rec) return {};
+      // Execute the corresponding physical/state intervention with human approval
+      if (rec.category === 'GATE_METERING') {
+        state.triggerIntervention('METERING', true);
+      } else if (rec.category === 'GATE_LOAD_BALANCING') {
+        state.triggerIntervention('REROUTING', true);
+      } else if (rec.category === 'DIRECTIONAL_SEPARATION') {
+        state.triggerIntervention('DIRECTIONAL_SEPARATION', true);
+      } else if (rec.category === 'QUEUE_CONFIGURATION') {
+        state.triggerIntervention('QUEUE_MANAGEMENT', true);
+      } else if (rec.category === 'TURNSTILE_STAFFING') {
+        const targetGate = rec.targetGate || 'E22';
+        const inners = getConnectedInnerGates(targetGate);
+        if (inners.length > 0) state.addTurnstileCounter(inners[0]);
+      }
+      return {
+        recommendations: state.recommendations.map((r) =>
+          r.id === id ? { ...r, status: 'APPROVED' as const } : r
+        )
+      };
+    }),
+  dismissRecommendation: (id) =>
+    set((state) => ({
+      recommendations: state.recommendations.map((r) =>
+        r.id === id ? { ...r, status: 'DISMISSED' as const } : r
+      )
+    })),
+  setActiveReplayRecord: (activeReplayRecord) => set({ activeReplayRecord, replayPlaybackTime: 0 }),
+  setReplayPlaybackTime: (val) =>
+    set((s) => ({
+      replayPlaybackTime: typeof val === 'function' ? (val as (prev: number) => number)(s.replayPlaybackTime) : val
+    })),
+  toggleReplayPlay: () => set((state) => ({ isReplayPlaying: !state.isReplayPlaying })),
+  setReplaySpeed: (replaySpeed) => set({ replaySpeed }),
+  setBenchmarkSuiteResults: (benchmarkSuiteResults) => set({ benchmarkSuiteResults }),
+  runBatchBenchmarkSuite: () => {
+    const results = BatchBenchmarkingEngine.runBenchmarkSuite();
+    set({ benchmarkSuiteResults: results });
+    return results;
   }
 }));

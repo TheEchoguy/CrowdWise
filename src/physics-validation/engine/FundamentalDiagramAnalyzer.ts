@@ -46,7 +46,20 @@ export class FundamentalDiagramAnalyzer {
         meanVelocityError: 0,
         densityFlowCurveDeviation: 0,
         validationStatus: 'INSUFFICIENT_REFERENCE_DATA',
-        statusRationale: 'No simulation or empirical sample points provided for fundamental diagram analysis.'
+        statusRationale: 'No simulation or empirical sample points provided for fundamental diagram analysis.',
+        evidence: {
+          referenceModel: 'Weidmann (1993) Pedestrian Fundamental Diagram',
+          referenceDataset: 'Empirical IVT Schriftenreihe 90 (v0=1.34 m/s, rho_max=5.4 p/m²)',
+          sampleCount: 0,
+          simulationDurationSec: 0,
+          densityRangeTested: '0 - 0 p/m²',
+          meanVelocityError: 0,
+          mveThreshold: 0.18,
+          flowCurveRMSE: 0,
+          rmseThreshold: 0.35,
+          status: 'INSUFFICIENT_REFERENCE_DATA',
+          isEmpiricalComparison: true
+        }
       };
     }
 
@@ -135,7 +148,20 @@ export class FundamentalDiagramAnalyzer {
       meanVelocityError,
       densityFlowCurveDeviation,
       validationStatus,
-      statusRationale
+      statusRationale,
+      evidence: {
+        referenceModel: 'Weidmann (1993) Pedestrian Fundamental Diagram',
+        referenceDataset: 'Empirical IVT Schriftenreihe 90 (v0=1.34 m/s, rho_max=5.4 p/m²)',
+        sampleCount: samples.length,
+        simulationDurationSec: 60,
+        densityRangeTested: dataPoints.length > 0 ? `${dataPoints[0].density} - ${dataPoints[dataPoints.length - 1].density} p/m²` : '0 p/m²',
+        meanVelocityError,
+        mveThreshold: 0.18,
+        flowCurveRMSE: densityFlowCurveDeviation,
+        rmseThreshold: 0.35,
+        status: validationStatus,
+        isEmpiricalComparison: true
+      }
     };
   }
 

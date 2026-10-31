@@ -191,7 +191,7 @@ export const GATE_CONNECTIVITY_CATALOG: Record<string, GateConnectionSpec> = {
   },
   E11: {
     outerGateId: 'E11',
-    road: 'LINK_ROAD',
+    road: 'MG_ROAD',
     accessPermission: 'SPECTATOR_PERMITTED',
     verificationStatus: 'VERIFIED',
     connectedInnerGates: ['G15'],
@@ -397,4 +397,42 @@ export const INNER_GATE_STAND_CATALOG: Record<string, InnerGateStandSpec> = {
     section: 'EAST_LINK'
   }
 };
+
+/**
+ * Returns all connected inner gate IDs for an outer gate.
+ */
+export function getConnectedInnerGates(outerGateId: string): string[] {
+  return GATE_CONNECTIVITY_CATALOG[outerGateId]?.connectedInnerGates || [];
+}
+
+/**
+ * Returns all connected outer gate IDs for an inner gate.
+ */
+export function getConnectedOuterGates(innerGateId: string): string[] {
+  const outerGates: string[] = [];
+  for (const [ogId, spec] of Object.entries(GATE_CONNECTIVITY_CATALOG)) {
+    if (spec.connectedInnerGates.includes(innerGateId)) {
+      outerGates.push(ogId);
+    }
+  }
+  return outerGates;
+}
+
+/**
+ * Returns all destination stand names for an outer gate.
+ */
+export function getDestinationStandsForOuterGate(outerGateId: string): string[] {
+  const innerGates = getConnectedInnerGates(outerGateId);
+  const stands = innerGates.map((gid) => INNER_GATE_STAND_CATALOG[gid]?.standName || gid);
+  return Array.from(new Set(stands));
+}
+
+/**
+ * Checks if a specific outer-to-inner connection is verified by KSCA blueprint.
+ */
+export function isConnectionVerified(outerGateId: string, innerGateId: string): boolean {
+  const spec = GATE_CONNECTIVITY_CATALOG[outerGateId];
+  if (!spec) return false;
+  return spec.verificationStatus === 'VERIFIED' && spec.connectedInnerGates.includes(innerGateId);
+}
 
