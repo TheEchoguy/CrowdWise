@@ -48,18 +48,31 @@ export function runBottleneckExperiment(seed: number = 42): BottleneckExperiment
     const durationSec = 12.0;
     const totalSubsteps = Math.round(durationSec / engine.DT);
     let discharged = 0;
+    let firstDischargeTimeSec = -1;
+    let lastDischargeTimeSec = -1;
 
     for (let step = 0; step < totalSubsteps; step++) {
       engine.stepSubstep();
+      const currentTime = step * engine.DT;
 
-      // Check if agents have passed through bottleneck (x > 16.0)
+      // Count directional crossing through bottleneck (x >= 15.5 with positive eastward velocity)
       for (let i = 0; i < engine.count; i++) {
-        if (engine.active[i] === 1 && engine.x[i] >= 16.0) {
+        if (engine.active[i] === 1 && engine.x[i] >= 15.5 && engine.vx[i] > 0) {
           discharged++;
+          if (firstDischargeTimeSec < 0) {
+            firstDischargeTimeSec = currentTime;
+          }
+          lastDischargeTimeSec = currentTime;
           engine.despawnAgent(i); // Clear out so they don't block downstream
         }
       }
     }
+
+    // Active discharge duration: measures true active clearing window without idle dilution
+    const activeDischargeDurationSec =
+      discharged >= 2 && lastDischargeTimeSec > firstDischargeTimeSec
+        ? Math.max(1.0, lastDischargeTimeSec - firstDischargeTimeSec)
+        : durationSec;
 
     // Active lanes proportional to width
     const lanes = Math.max(1, Math.round(width / 0.8));
@@ -69,7 +82,8 @@ export function runBottleneckExperiment(seed: number = 42): BottleneckExperiment
       discharged,
       durationSec,
       0.75,
-      lanes
+      lanes,
+      activeDischargeDurationSec
     );
     reports.push(report);
   }

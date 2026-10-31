@@ -155,8 +155,19 @@ export class SpatialRiskDisplacementEngine {
       const avgVel = count > 0 ? Math.round((sumVel / count) * 100) / 100 : 1.34;
       if (maxRho > systemPeak) systemPeak = maxRho;
 
-      // Directional queue spillback distance (meters extending upstream southward)
-      const spillbackM = Math.max(0, Math.round(((count * 0.5) - bounds.areaM2 * 0.08) * 10) / 10);
+      // Directional queue spillback distance: measured along ingress axis (upstream direction southward +y)
+      let spillbackM = 0;
+      const queuedAgents = contained.filter((a) => (Math.hypot(a.vx, a.vy) / 20.0) < 0.35);
+      if (queuedAgents.length > 0) {
+        // Measure span from downstream gate/choke boundary (bounds.yMin) to tail of queue (max y)
+        const maxY = Math.max(...queuedAgents.map((a) => a.y));
+        const minY = Math.min(...queuedAgents.map((a) => a.y));
+        spillbackM = Math.max(0, Math.round(((maxY - minY) / 20.0) * 10) / 10);
+      }
+      if (spillbackM === 0 && count > 0) {
+        // Fallback estimate based on pedestrian occupancy: each queued agent occupies ~0.5m longitudinally
+        spillbackM = Math.max(0, Math.round(((count * 0.5) - bounds.areaM2 * 0.08) * 10) / 10);
+      }
 
       zones[zid] = {
         zoneId: zid,
@@ -312,23 +323,21 @@ export class SpatialRiskDisplacementEngine {
     }
 
     // Displacement Logic:
-    // Risk decreases at intervention zone (e.g. Zone 4 Throat or Zone 3 Concourse),
-    // but increases in an upstream or adjacent zone (Zone 1, Zone 2, or Zone 3)
-    const throatImproved = fullComparisons.ZONE_4_THROAT.isImproved;
-    const concourseImproved = fullComparisons.ZONE_3_QUEUE_CONCOURSE.isImproved;
-    const upstreamDeterioratedZone = zoneKeys.find(
-      (zid) => (zid === 'ZONE_1_PUBLIC_ROAD' || zid === 'ZONE_2_HOLDING_AREA' || zid === 'ZONE_3_QUEUE_CONCOURSE') &&
-        (fullComparisons[zid].isDeteriorated || fullComparisons[zid].isNewHotspot)
+    // Risk decreases at any intervention zone (e.g. Zone 4 Throat or Zone 3 Concourse),
+    // but increases in an upstream or adjacent zone (Zone 1, Zone 2, Zone 3, etc.)
+    const improvedZoneKey = zoneKeys.find((zid) => fullComparisons[zid].isImproved);
+    const deterioratedZoneKey = zoneKeys.find(
+      (zid) => zid !== improvedZoneKey && (fullComparisons[zid].isDeteriorated || fullComparisons[zid].isNewHotspot)
     );
 
     let isDisplacementDetected = false;
     let displacedSource: string | undefined;
     let displacedTarget: string | undefined;
 
-    if ((throatImproved || concourseImproved) && upstreamDeterioratedZone) {
+    if (improvedZoneKey && deterioratedZoneKey) {
       isDisplacementDetected = true;
-      displacedSource = throatImproved ? 'Zone 4 (Throat)' : 'Zone 3 (Concourse)';
-      displacedTarget = fullComparisons[upstreamDeterioratedZone].zoneName;
+      displacedSource = fullComparisons[improvedZoneKey].zoneName;
+      displacedTarget = fullComparisons[deterioratedZoneKey].zoneName;
     }
 
     // Determine Final Safety Verdict
@@ -342,10 +351,10 @@ export class SpatialRiskDisplacementEngine {
     const hasAnyNewHotspot = Object.values(fullComparisons).some((c) => c.isNewHotspot);
     const hasSevereHotspot = Object.values(fullComparisons).some((c) => c.mitigatedPeakDensity >= 5.0);
 
-    if (isDisplacementDetected) {
+    if (isDisplacementDetected && deterioratedZoneKey) {
       verdict = 'DISPLACED';
       confidence = 94;
-      rationale = `Risk displacement detected: Intervention decompressed ${displacedSource}, but displaced crowd risk upstream into ${displacedTarget} (Δρ = +${fullComparisons[upstreamDeterioratedZone!].deltaDensity} p/m²).`;
+      rationale = `Risk displacement detected: Intervention decompressed ${displacedSource}, but displaced crowd risk into ${displacedTarget} (Δρ = +${fullComparisons[deterioratedZoneKey].deltaDensity} p/m²).`;
       permitRecommendation = 'CONDITIONAL APPROVAL: Upstream buffer or municipal road closure required before permit issuance.';
     } else if (hasSevereHotspot || deterioratedCount >= 2 || (deterioratedCount >= 1 && hasAnyNewHotspot)) {
       verdict = 'DETERIORATED';

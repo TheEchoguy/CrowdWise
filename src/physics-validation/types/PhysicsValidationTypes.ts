@@ -219,6 +219,7 @@ export interface PairedExperimentResult {
 export interface PhysicsValidationMasterReport {
   timestamp: string;
   fundamentalDiagram: FundamentalDiagramResult;
+  evidence: ValidationEvidence;
   counterFlow: {
     forwardOnly: CounterFlowExperimentResult;
     seventyFiveTwentyFive: CounterFlowExperimentResult;

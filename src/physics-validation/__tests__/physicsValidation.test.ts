@@ -1,6 +1,6 @@
 /**
  * CROWDWISE — Part E: Comprehensive Physics Validation & Safety Verification Suite
- * Tests 1 to 14: Validates physical realism, bidirectional counter-flow, and risk displacement
+ * Tests 1 to 14: Validates physical realism, bidirectional counter-flow, 5-zone displacement, and empirical credibility
  */
 
 import assert from 'node:assert/strict';
@@ -13,6 +13,8 @@ import { SpatialRiskDisplacementEngine } from '../engine/SpatialRiskDisplacement
 import { PhysicsValidationEngine } from '../engine/PhysicsValidationEngine';
 import { CounterFlowAnalyzer } from '../engine/CounterFlowAnalyzer';
 import { QueueDischargeAnalyzer } from '../engine/QueueDischargeAnalyzer';
+import { FundamentalDiagramAnalyzer } from '../engine/FundamentalDiagramAnalyzer';
+import { SyntheticDemandGenerator, ScenarioConfig } from '../../engine/SyntheticDemandGenerator';
 
 console.log('--- Running CROWDWISE Physics Credibility & Safety Verification Test Suite ---\n');
 
@@ -40,7 +42,6 @@ export function runPhysicsValidationTests(): void {
     densityResult.densityAtMaxFlow >= 1.0 && densityResult.densityAtMaxFlow <= 3.0,
     `Peak flow density (${densityResult.densityAtMaxFlow} p/m²) must fall in empirical plateau [1.0, 3.0]`
   );
-  // Verify speed reduction between lowest density and highest density
   const lowestDensityPoint = densityResult.dataPoints[0];
   const highestDensityPoint = densityResult.dataPoints[densityResult.dataPoints.length - 1];
   assert.ok(
@@ -50,8 +51,8 @@ export function runPhysicsValidationTests(): void {
   console.log(`✓ TEST 2 Passed: Density-dependent speed reduction (Peak flow J_max = ${densityResult.maxObservedFlow} at rho = ${densityResult.densityAtMaxFlow} p/m²)`);
 
   // =========================================================================
-  // TEST 3 — Narrow corridor bottleneck
-  // Constrictions reduce throughput; wider constrictions yield higher capacity monotonically
+  // TEST 3 — Narrow corridor bottleneck & monotonic scaling
+  // Constrictions reduce throughput; wider constrictions yield strictly higher capacity
   // =========================================================================
   const bottleneckSuite = runBottleneckExperiment(42);
   assert.ok(
@@ -65,20 +66,21 @@ export function runPhysicsValidationTests(): void {
   console.log(`✓ TEST 3 Passed: Narrow corridor bottleneck (Discharge: 1.2m = ${bottleneckSuite.narrowCorridor.observedDischargeRatePerSec} p/s, 3.0m = ${bottleneckSuite.wideCorridor.observedDischargeRatePerSec} p/s)`);
 
   // =========================================================================
-  // TEST 4 — Queue discharge
-  // Specific discharge capacity falls within Schadschneider & Seyfried (2011) [1.2 - 1.9 p/(m*s)]
+  // TEST 4 — Queue discharge units and capacity bounds
+  // Specific discharge capacity in p/(m·s) falls within Schadschneider & Seyfried (2011) [1.2 - 1.9 p/(m*s)]
   // =========================================================================
-  const dischargeEval = QueueDischargeAnalyzer.evaluateDischarge(2.0, 50, 30, 10.0, 0.75, 2);
+  const dischargeEval = QueueDischargeAnalyzer.evaluateDischarge(2.0, 50, 30, 10.0, 0.75, 2, 8.5);
   assert.ok(dischargeEval.observedDischargeRatePerSec > 0, 'Discharge rate must be strictly positive');
   assert.ok(
     dischargeEval.specificDischargeCapacity >= 0.8 && dischargeEval.specificDischargeCapacity <= 2.5,
     `Specific discharge capacity (${dischargeEval.specificDischargeCapacity} p/(m*s)) must follow physical bounds`
   );
   assert.ok(dischargeEval.timeToClearQueueSec < Infinity, 'Time to clear queue must be finite');
+  assert.equal(dischargeEval.corridorWidthMeters, 2.0, 'Discharge calculation must use actual bottleneck width');
   console.log(`✓ TEST 4 Passed: Queue discharge (Specific capacity = ${dischargeEval.specificDischargeCapacity} p/(m*s), status: ${dischargeEval.validationStatus})`);
 
   // =========================================================================
-  // TEST 5 — Opposing pedestrian streams
+  // TEST 5 — Opposing pedestrian streams & directional cosines
   // Directional cosine detects opposing vectors (cos theta < -0.4)
   // =========================================================================
   const cosOpposing = CounterFlowAnalyzer.computeCosineTheta(1.2, 0, -1.2, 0); // Head-on 180 deg
@@ -111,18 +113,35 @@ export function runPhysicsValidationTests(): void {
   console.log(`✓ TEST 6 Passed: Natural lane formation (Order parameter Phi = ${counterFlowSuite.seventyFiveTwentyFive.laneFormationOrderParameter})`);
 
   // =========================================================================
-  // TEST 7 — Counter-flow congestion
-  // Symmetrical 50/50 counter-flow reduces throughput compared to unidirectional flow (emergent, not hardcoded)
+  // TEST 7 — Counter-flow non-zero throughput & reverse counting
+  // Symmetrical 50/50 counter-flow produces non-zero throughput and counts reverse agents
   // =========================================================================
   assert.ok(
+    counterFlowSuite.fiftyFifty.netThroughputPerMin > 0,
+    `Balanced 50/50 counter-flow must produce non-zero net throughput (got ${counterFlowSuite.fiftyFifty.netThroughputPerMin} p/m)`
+  );
+  assert.ok(
+    counterFlowSuite.fiftyFifty.forwardThroughputPerMin > 0,
+    `Forward throughput must be non-zero in 50/50 flow (got ${counterFlowSuite.fiftyFifty.forwardThroughputPerMin} p/m)`
+  );
+  assert.ok(
+    counterFlowSuite.fiftyFifty.reverseThroughputPerMin > 0,
+    `Reverse throughput must be non-zero in 50/50 flow (got ${counterFlowSuite.fiftyFifty.reverseThroughputPerMin} p/m)`
+  );
+  assert.equal(
+    counterFlowSuite.fiftyFifty.netThroughputPerMin,
+    counterFlowSuite.fiftyFifty.forwardThroughputPerMin + counterFlowSuite.fiftyFifty.reverseThroughputPerMin,
+    'Net throughput must equal sum of forward and reverse throughput'
+  );
+  assert.ok(
     counterFlowSuite.isCapacityReductionEmergent,
-    'Head-on 50/50 opposing streams must produce emergent throughput reduction'
+    '50/50 opposing streams must produce emergent throughput reduction'
   );
   assert.ok(
     counterFlowSuite.fiftyFifty.netThroughputPerMin <= counterFlowSuite.forwardOnly.netThroughputPerMin,
     `50/50 throughput (${counterFlowSuite.fiftyFifty.netThroughputPerMin}) <= forward-only (${counterFlowSuite.forwardOnly.netThroughputPerMin})`
   );
-  console.log(`✓ TEST 7 Passed: Counter-flow congestion (Emergent reduction = ${counterFlowSuite.fiftyFifty.capacityReductionPercent}%, throughput = ${counterFlowSuite.fiftyFifty.netThroughputPerMin} vs ${counterFlowSuite.forwardOnly.netThroughputPerMin} p/m)`);
+  console.log(`✓ TEST 7 Passed: Counter-flow non-zero throughput & reverse accounting (Forward = ${counterFlowSuite.fiftyFifty.forwardThroughputPerMin} p/m, Reverse = ${counterFlowSuite.fiftyFifty.reverseThroughputPerMin} p/m, Net = ${counterFlowSuite.fiftyFifty.netThroughputPerMin} p/m, Emergent Loss = ${counterFlowSuite.fiftyFifty.capacityReductionPercent}%)`);
 
   // =========================================================================
   // TEST 8 — Gate metering
@@ -134,68 +153,95 @@ export function runPhysicsValidationTests(): void {
   console.log(`✓ TEST 8 Passed: Gate metering (Throat density: Baseline = ${pairedMetering.baselineGateDensity} p/m², Mitigated = ${pairedMetering.mitigatedGateDensity} p/m²)`);
 
   // =========================================================================
-  // TEST 9 — Holding-area risk accumulation
-  // When gate metering is engaged, queued spectators accumulate in upstream holding area
+  // TEST 9 — Directional queue spillback calculation
+  // Directional queue spillback is measured along arrival axis into upstream zones
   // =========================================================================
-  const holdingDiff =
-    pairedMetering.mitigatedHoldingAreaDensity - pairedMetering.baselineHoldingAreaDensity;
-  // If holding area absorbed the metered queue:
+  // Mock queued agents at throat backed up into Zone 2 holding area
+  const mockQueuedAgents = [
+    { x: 300, y: 380, vx: 0, vy: 2, density: 4.6 },
+    { x: 300, y: 440, vx: 0, vy: 1, density: 4.8 },
+    { x: 300, y: 470, vx: 0, vy: 0.5, density: 4.5 }
+  ];
+  const directionalSnap = SpatialRiskDisplacementEngine.sampleZones(mockQueuedAgents, 0);
   assert.ok(
-    pairedMetering.mitigatedHoldingAreaDensity >= 0,
-    'Holding area density must be calculated accurately'
+    directionalSnap.zones.ZONE_2_HOLDING_AREA.longitudinalSpillbackMeters > 0,
+    'Queued agents in Zone 2 must project positive longitudinal spillback distance'
   );
-  console.log(`✓ TEST 9 Passed: Holding-area risk accumulation (Holding area density: ${pairedMetering.mitigatedHoldingAreaDensity} p/m², diff: ${holdingDiff >= 0 ? '+' : ''}${holdingDiff.toFixed(1)} p/m²)`);
+  console.log(`✓ TEST 9 Passed: Directional queue spillback calculation (Zone 2 spillback = ${directionalSnap.zones.ZONE_2_HOLDING_AREA.longitudinalSpillbackMeters}m)`);
 
   // =========================================================================
-  // TEST 10 — Upstream spillback
-  // Long queues project longitudinal spillback onto public roadway (Zone 1)
+  // TEST 10 — Hotspot moving from Z4 to Z2 produces DISPLACED
+  // Decompressing throat that shifts crowd hazard upstream into holding area must yield DISPLACED
   // =========================================================================
+  const snapZ4Hotspot = SpatialRiskDisplacementEngine.sampleZones([
+    { x: 300, y: 200, vx: 0, vy: -5, density: 4.8 }, // Z4 Throat: Severe hazard
+    { x: 300, y: 400, vx: 0, vy: -10, density: 1.5 } // Z2 Holding: Free flow
+  ]);
+  const snapZ2Hotspot = SpatialRiskDisplacementEngine.sampleZones([
+    { x: 300, y: 200, vx: 0, vy: -5, density: 2.0 }, // Z4 Throat: Decompressed (Improved)
+    { x: 300, y: 400, vx: 0, vy: -1, density: 4.9 }  // Z2 Holding: New severe hazard
+  ]);
+  const dispZ4ToZ2 = SpatialRiskDisplacementEngine.compare(snapZ4Hotspot, snapZ2Hotspot, 200, 180);
+  assert.equal(dispZ4ToZ2.isDisplacementDetected, true, 'Moving crowd from Z4 to Z2 must trigger displacement');
+  assert.equal(dispZ4ToZ2.verdict, 'DISPLACED', 'Verdict when shifting risk from Z4 to Z2 must be DISPLACED');
   assert.ok(
-    pairedMetering.maxSpillbackMeters >= 0,
-    'Spillback must be non-negative physical metric'
+    dispZ4ToZ2.displacedTargetZone?.includes('Zone 2') || dispZ4ToZ2.displacedTargetZone?.includes('Holding'),
+    `Displaced target zone must identify Zone 2 Holding Area (got ${dispZ4ToZ2.displacedTargetZone})`
   );
-  console.log(`✓ TEST 10 Passed: Upstream spillback (Max longitudinal spillback = ${pairedMetering.maxSpillbackMeters}m)`);
+  console.log(`✓ TEST 10 Passed: Hotspot moving from Z4 to Z2 produces DISPLACED (Target = ${dispZ4ToZ2.displacedTargetZone})`);
 
   // =========================================================================
-  // TEST 11 — Downstream risk displacement
-  // Displacement Detector flags when throat decompression shifts danger to public roadway
+  // TEST 11 — New hotspot in Z3 is detected & cannot hide behind other improvements
+  // Improvement in Z4 cannot hide new crush hazard in Z3 (Concourse)
   // =========================================================================
-  const mockBaseSnapshot = SpatialRiskDisplacementEngine.sampleZones([
-    { x: 300, y: 200, vx: 0, vy: -5, density: 4.8 }, // Zone 4 (Throat) High density
-    { x: 300, y: 520, vx: 0, vy: -10, density: 1.0 } // Zone 1 (Road) Low density
+  const snapZ3Normal = SpatialRiskDisplacementEngine.sampleZones([
+    { x: 300, y: 200, vx: 0, vy: -5, density: 4.8 }, // Z4 Throat
+    { x: 300, y: 300, vx: 0, vy: -10, density: 1.8 } // Z3 Concourse (< 4.0 p/m²)
   ]);
-  const mockMitSnapshot = SpatialRiskDisplacementEngine.sampleZones([
-    { x: 300, y: 200, vx: 0, vy: -5, density: 2.0 }, // Zone 4 (Throat) Decompressed
-    { x: 300, y: 520, vx: 0, vy: -1, density: 5.2 }  // Zone 1 (Road) CRITICAL SPIKE!
+  const snapZ3Hotspot = SpatialRiskDisplacementEngine.sampleZones([
+    { x: 300, y: 200, vx: 0, vy: -5, density: 2.0 }, // Z4 Throat decompressed
+    { x: 300, y: 300, vx: 0, vy: -2, density: 4.7 }  // Z3 Concourse new hotspot (>= 4.5 p/m²)
   ]);
-  const displacementResult = SpatialRiskDisplacementEngine.compare(
-    mockBaseSnapshot,
-    mockMitSnapshot,
-    200,
-    180
-  );
+  const dispZ3Result = SpatialRiskDisplacementEngine.compare(snapZ3Normal, snapZ3Hotspot, 220, 190);
   assert.equal(
-    displacementResult.isDisplacementDetected,
+    dispZ3Result.zoneComparisons.ZONE_3_QUEUE_CONCOURSE.isNewHotspot,
     true,
-    'Shifting crowd from throat to public road must trigger displacement detection'
+    'Z3 must be flagged as a new hotspot when rising from 1.8 to 4.7 p/m²'
   );
-  assert.equal(
-    displacementResult.verdict,
-    'DISPLACED',
-    'Verdict must be DISPLACED'
+  assert.notEqual(
+    dispZ3Result.verdict,
+    'IMPROVED',
+    'Improvement in Z4 throat CANNOT hide new hazard hotspot in Z3 concourse'
   );
-  console.log(`✓ TEST 11 Passed: Downstream risk displacement (Verdict = ${displacementResult.verdict}, Displaced to ${displacementResult.displacedTargetZone})`);
+  assert.equal(dispZ3Result.verdict, 'DISPLACED', 'Shifting risk to Z3 concourse must yield DISPLACED verdict');
+  console.log(`✓ TEST 11 Passed: New hotspot in Z3 detected and prevents false IMPROVED verdict (isNewHotspot = true, Verdict = ${dispZ3Result.verdict})`);
 
   // =========================================================================
-  // TEST 12 — Paired experiment reproducibility
-  // Running identical seeds produces bit-for-bit identical results
+  // TEST 12 — Paired experiment schedule immutability & bit-for-bit reproducibility
+  // Seeded arrival generator produces bit-for-bit identical schedules for baseline and mitigated runs
   // =========================================================================
+  const testConfig: ScenarioConfig = {
+    id: 'test_sched',
+    type: 'NORMAL',
+    name: 'Reproducibility Check',
+    description: 'Seed lock test',
+    seed: 12345,
+    baseInflowRate: 300,
+    durationSeconds: 20
+  };
+  const schedA = SyntheticDemandGenerator.generateSchedule(testConfig, 'LINK_ROAD');
+  const schedB = SyntheticDemandGenerator.generateSchedule(testConfig, 'LINK_ROAD');
+  assert.equal(schedA.length, schedB.length, 'Schedule lengths must be identical');
+  for (let i = 0; i < schedA.length; i++) {
+    assert.equal(schedA[i].timeSeconds, schedB[i].timeSeconds, `Agent ${i} timeSeconds mismatch`);
+    assert.equal(schedA[i].agentId, schedB[i].agentId, `Agent ${i} agentId mismatch`);
+  }
   const isReproducible = PhysicsValidationEngine.verifySeedReproducibility(42);
   assert.equal(isReproducible, true, 'Seeded simulation must be 100% deterministic and bit-for-bit reproducible');
-  console.log('✓ TEST 12 Passed: Paired experiment reproducibility (Bit-for-bit identical across identical seeds)');
+  console.log('✓ TEST 12 Passed: Paired experiment reproducibility & arrival schedule immutability');
 
   // =========================================================================
-  // TEST 13 — Missing-zone telemetry
+  // TEST 13 — Missing-zone telemetry strictly produces INCONCLUSIVE
   // If any monitored zone has missing data, verdict must be INCONCLUSIVE (never IMPROVED)
   // =========================================================================
   const snapshotWithMissing = SpatialRiskDisplacementEngine.sampleZones(
@@ -204,7 +250,7 @@ export function runPhysicsValidationTests(): void {
     'ZONE_3_QUEUE_CONCOURSE' // Missing Zone 3
   );
   assert.equal(snapshotWithMissing.hasMissingTelemetry, true, 'Missing telemetry flag must be true');
-  const verdictMissing = SpatialRiskDisplacementEngine.compare(mockBaseSnapshot, snapshotWithMissing);
+  const verdictMissing = SpatialRiskDisplacementEngine.compare(snapZ4Hotspot, snapshotWithMissing);
   assert.equal(
     verdictMissing.verdict,
     'INCONCLUSIVE',
@@ -215,16 +261,33 @@ export function runPhysicsValidationTests(): void {
     'IMPROVED',
     'Cannot declare IMPROVED when monitored zone has missing telemetry'
   );
-  console.log(`✓ TEST 13 Passed: Missing-zone telemetry (Missing Zone 3 -> Verdict: ${verdictMissing.verdict}, Permit: ${verdictMissing.permitOfficerRecommendation})`);
+  console.log(`✓ TEST 13 Passed: Missing-zone telemetry (Missing Zone 3 -> Verdict: ${verdictMissing.verdict}, Recommendation: ${verdictMissing.permitOfficerRecommendation})`);
 
   // =========================================================================
-  // TEST 14 — Global versus local density consistency
-  // Local densities in bottlenecks exceed global averaged density; no false smoothing
+  // TEST 14 — Validation status cannot pass without sufficient reference evidence
+  // Insufficient density bins strictly yields INSUFFICIENT_REFERENCE_DATA, not VALIDATED
   // =========================================================================
-  const masterReport = PhysicsValidationEngine.executeFullValidation(42);
-  assert.ok(masterReport.fundamentalDiagram.dataPoints.length > 0, 'Fundamental diagram must have points');
-  assert.ok(masterReport.summaryFindings.length >= 4, 'Master report must contain summary findings');
-  console.log(`✓ TEST 14 Passed: Global versus local density consistency (Overall status: ${masterReport.overallStatus})`);
+  const emptyAnalysis = FundamentalDiagramAnalyzer.analyze([]);
+  assert.equal(
+    emptyAnalysis.validationStatus,
+    'INSUFFICIENT_REFERENCE_DATA',
+    'Zero samples must produce INSUFFICIENT_REFERENCE_DATA'
+  );
+  const fewSamplesAnalysis = FundamentalDiagramAnalyzer.analyze([
+    { density: 1.0, velocity: 1.25 },
+    { density: 1.1, velocity: 1.20 }
+  ]);
+  assert.equal(
+    fewSamplesAnalysis.validationStatus,
+    'INSUFFICIENT_REFERENCE_DATA',
+    'Fewer than 4 density bins must produce INSUFFICIENT_REFERENCE_DATA'
+  );
+  assert.notEqual(
+    fewSamplesAnalysis.validationStatus,
+    'VALIDATED_AGAINST_REFERENCE',
+    'Cannot validate without sufficient empirical reference evidence'
+  );
+  console.log(`✓ TEST 14 Passed: Scientific evidence safeguards (Validation status: ${fewSamplesAnalysis.validationStatus} on insufficient bins)`);
 
   console.log('\n=============================================================');
   console.log('✓ ALL 14 PHYSICS CREDIBILITY & VERIFICATION TESTS PASSED!');

@@ -55,6 +55,7 @@ export class PhysicsValidationEngine {
     return {
       timestamp: new Date().toISOString(),
       fundamentalDiagram: fundamentalResult,
+      evidence: fundamentalResult.evidence,
       counterFlow: {
         forwardOnly: counterFlowSuite.forwardOnly,
         seventyFiveTwentyFive: counterFlowSuite.seventyFiveTwentyFive,

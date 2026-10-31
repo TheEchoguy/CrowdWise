@@ -13,7 +13,8 @@ export interface BottleneckDischargeReport {
   totalQueued: number;
   totalDischarged: number;
   elapsedTimeSec: number;
-  observedDischargeRatePerSec: number; // patrons / sec
+  activeDischargeDurationSec: number;
+  observedDischargeRatePerSec: number; // patrons / sec (p/s)
   specificDischargeCapacity: number; // patrons / (m * s)
   nominalTheoreticalCapacityPerSec: number; // patrons / sec
   dischargeErrorPercent: number;
@@ -32,13 +33,17 @@ export class QueueDischargeAnalyzer {
     dischargedCount: number,
     elapsedTimeSec: number,
     nominalTurnstileRatePerLaneSec: number = 0.75, // 1 patron every 1.33 seconds
-    activeLanes: number = 2
+    activeLanes: number = 2,
+    activeDischargeDurationSec?: number
   ): BottleneckDischargeReport {
-    const timeSec = Math.max(0.1, elapsedTimeSec);
+    const totalTimeSec = Math.max(0.1, elapsedTimeSec);
+    const activeTimeSec = Math.max(0.1, activeDischargeDurationSec ?? totalTimeSec);
     const width = Math.max(0.5, corridorWidthMeters);
 
-    const observedRatePerSec = Math.round((dischargedCount / timeSec) * 100) / 100;
-    const specificCapacity = Math.round((observedRatePerSec / width) * 100) / 100; // p/(m*s)
+    // Active discharge flow rate (patrons/second) during steady-state clearing
+    const observedRatePerSec = Math.round((dischargedCount / activeTimeSec) * 100) / 100;
+    // Specific discharge capacity J_s = J / W in patrons/(meter * second)
+    const specificCapacity = Math.round((observedRatePerSec / width) * 100) / 100;
 
     const nominalRate = activeLanes * nominalTurnstileRatePerLaneSec;
     const rateDiff = Math.abs(observedRatePerSec - nominalRate);
@@ -52,7 +57,7 @@ export class QueueDischargeAnalyzer {
     let validationStatus: ValidationStatus = 'NOT_VALIDATED';
     let statusRationale = '';
 
-    if (dischargedCount < 5 || timeSec < 5) {
+    if (dischargedCount < 5 || activeTimeSec < 3) {
       validationStatus = 'INSUFFICIENT_REFERENCE_DATA';
       statusRationale = 'Sample discharge duration or count too small for steady-state bottleneck evaluation.';
     } else if (
@@ -73,7 +78,8 @@ export class QueueDischargeAnalyzer {
       corridorWidthMeters: width,
       totalQueued: initialQueueCount,
       totalDischarged: dischargedCount,
-      elapsedTimeSec: Math.round(timeSec * 10) / 10,
+      elapsedTimeSec: Math.round(totalTimeSec * 10) / 10,
+      activeDischargeDurationSec: Math.round(activeTimeSec * 10) / 10,
       observedDischargeRatePerSec: observedRatePerSec,
       specificDischargeCapacity: specificCapacity,
       nominalTheoreticalCapacityPerSec: Math.round(nominalRate * 100) / 100,
