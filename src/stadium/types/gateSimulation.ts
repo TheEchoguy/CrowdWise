@@ -1,19 +1,25 @@
 /**
- * CROWDWISE — Phase 2.1: Microscopic Gate Simulation & Heatmap Data Types
+ * CROWDWISE — Phase 2.2: Simplified Gate Simulation & Point-Cloud Types
  * M. Chinnaswamy Stadium, Bengaluru
+ *
+ * Simplified 2-Stage Verification:
+ * OUTER GATE -> APPROACH CORRIDOR -> HOLDING/QUEUES -> TICKET SCAN -> PERSON CHECK -> TURNSTILE -> VOMITORY -> STAND
  */
 
 export type MicroAgentState =
   | 'ARRIVING'
   | 'WAITING_IN_QUEUE'
   | 'TICKET_SCANNING'
-  | 'TICKET_VALIDATION'
-  | 'SECURITY_SCREENING'
+  | 'TICKET_VALIDATED'
+  | 'PERSON_CHECKING'
+  | 'PERSON_VERIFIED'
+  | 'WAITING_FOR_TURNSTILE'
   | 'TURNSTILE_WAITING'
   | 'TURNSTILE_PROCESSING'
   | 'ADMITTED'
+  | 'VOMITORY_DISPERSAL'
+  | 'DESTINATION_STAND'
   | 'REJECTED'
-  | 'SECONDARY_INSPECTION'
   | 'DIVERTED'
   | 'EXITED';
 
@@ -25,6 +31,26 @@ export type TicketValidationResult =
   | 'WRONG_STAND'
   | 'WRONG_GATE'
   | 'SCANNER_MALFUNCTION';
+
+export type PersonCheckResult =
+  | 'VERIFIED'
+  | 'MISMATCH'
+  | 'MANUAL_REVIEW_REQUIRED'
+  | 'STATION_UNAVAILABLE';
+
+export interface SecurityScreeningStationState {
+  id: string;
+  name: string;
+  x: number;
+  y: number;
+  status: string;
+  currentAgentId: number | null;
+  screeningRemainingSec: number;
+  nominalLatencySec: number;
+  totalInspected: number;
+  totalCleared: number;
+  totalSecondaryReferrals: number;
+}
 
 export interface SyntheticTicket {
   ticketId: string;
@@ -47,9 +73,12 @@ export interface MicroGateAgent {
   radius: number;
   state: MicroAgentState;
   ticket: SyntheticTicket;
+  attendeeName: string;
+  ticketHolderName: string;
+  personCheckStatus?: PersonCheckResult;
   assignedLaneIndex: number;
   assignedScanStationId: string | null;
-  assignedScreeningStationId: string | null;
+  assignedPersonCheckStationId: string | null;
   assignedTurnstileCounterId: string | null;
   targetInnerGateId: string;
   targetStandName: string;
@@ -57,7 +86,6 @@ export interface MicroGateAgent {
   timeInCurrentStateSec: number;
   totalWaitTimeSec: number;
   isDiverted: boolean;
-  isSecondaryScreening: boolean;
   currentWaypointIndex: number;
   waypoints: { x: number; y: number }[];
 }
@@ -76,32 +104,35 @@ export interface TicketScanStationState {
   totalRejected: number;
 }
 
-export interface SecurityScreeningStationState {
-  id: string; // e.g. 'SEC-1'
+export interface PersonCheckStationState {
+  id: string; // e.g. 'CHK-1'
   name: string;
   x: number;
   y: number;
-  status: 'IDLE' | 'SCREENING' | 'FAILED';
+  status: 'IDLE' | 'CHECKING' | 'FAILED';
   currentAgentId: number | null;
-  screeningRemainingSec: number;
-  nominalLatencySec: number; // e.g. 2.0s
-  totalInspected: number;
-  totalCleared: number;
-  totalSecondaryReferrals: number;
+  checkRemainingSec: number;
+  nominalLatencySec: number; // e.g. 1.0s
+  totalChecked: number;
+  totalVerified: number;
+  totalMismatches: number;
 }
 
 export interface MicroTurnstileCounterState {
-  counterId: string; // e.g. 'G8-1'
+  counterId: string; // e.g. 'G8-T01'
   gateId: string;    // e.g. 'G8'
   standName: string;
   laneIndex: number;
   x: number;
   y: number;
-  status: 'IDLE' | 'BUSY' | 'FAILED';
+  status: 'IDLE' | 'BUSY' | 'FAILED' | 'OFFLINE';
   currentAgentId: number | null;
   serviceRemainingSec: number;
   nominalLatencySec: number; // e.g. 1.0s
   processedCount: number;
+  processingCapacityPerMin?: number;
+  queueLength?: number;
+  assignedQueue?: number[]; // list of agent IDs waiting specifically for this counter
 }
 
 export interface QueueLaneState {
@@ -122,16 +153,29 @@ export interface MicroGateMetrics {
   ticketsScanned: number;
   ticketsAccepted: number;
   ticketsRejected: number;
-  securityCleared: number;
+  personsChecked: number;
+  personsVerified: number;
+  personMismatches: number;
+  securityCleared?: number; // Alias for personsVerified
+  currentlyScreening?: number; // Alias for currentlyChecking
   waitingInQueues: number;
   currentlyScanning: number;
-  currentlyScreening: number;
+  currentlyChecking: number;
   turnstilesOperational: number;
   turnstilesTotal: number;
+  turnstilesBusy?: number;
+  turnstilesIdle?: number;
+  turnstilesFailed?: number;
   spectatorsAdmitted: number;
   averageWaitTimeSec: number;
   currentThroughputPerMin: number;
   gateUtilizationPercent: number;
+
+  // Capacity breakdown
+  ticketScanCapacityPerMin: number;
+  personCheckCapacityPerMin: number;
+  turnstileCapacityPerMin: number;
+  effectiveCapacityPerMin: number;
 
   // Microscopic 3-Zone Metrics
   zone1ApproachDensity: number;
@@ -145,7 +189,7 @@ export interface MicroGateMetrics {
   peakMicroDensity: number;
 }
 
-export type HeatmapVisualizationMode = 'HEATMAP' | 'AGENTS' | 'HYBRID' | 'ROUTES_ONLY';
+export type HeatmapVisualizationMode = 'DENSITY_POINTS' | 'HEATMAP' | 'AGENTS' | 'HYBRID' | 'ROUTES_ONLY';
 
 export interface GateLogEvent {
   id: string;

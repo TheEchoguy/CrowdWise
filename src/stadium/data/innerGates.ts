@@ -1,4 +1,5 @@
 import { InnerGate } from '../types/stadium';
+import { getConnectedOuterGates } from '../network/gateConnectivity';
 
 /**
  * Authentic Inner Gates (G-Series: G1 to G15)
@@ -20,7 +21,7 @@ export const CHINNASWAMY_INNER_GATES: InnerGate[] = [
     turnstileCount: 4,
     baseCapacityPerMin: 240,
     verificationStatus: 'VERIFIED',
-    connectedOuterGates: ['E10'],
+    connectedOuterGates: getConnectedOuterGates('G1'),
     notes: 'South Members/VIP vomitory leading to P Terrace and KSCA Clubhouse.'
   },
   {
@@ -34,7 +35,7 @@ export const CHINNASWAMY_INNER_GATES: InnerGate[] = [
     turnstileCount: 4,
     baseCapacityPerMin: 240,
     verificationStatus: 'VERIFIED',
-    connectedOuterGates: ['E8', 'E10'],
+    connectedOuterGates: getConnectedOuterGates('G2'),
     notes: 'South-west vomitory serving P1 Annexe and elevated corporate lofts.'
   },
   {
@@ -48,7 +49,7 @@ export const CHINNASWAMY_INNER_GATES: InnerGate[] = [
     turnstileCount: 3,
     baseCapacityPerMin: 180,
     verificationStatus: 'VERIFIED',
-    connectedOuterGates: ['E8'],
+    connectedOuterGates: getConnectedOuterGates('G3'),
     notes: 'Direct turnstile ingress for P3 covered seating.'
   },
   {
@@ -62,7 +63,7 @@ export const CHINNASWAMY_INNER_GATES: InnerGate[] = [
     turnstileCount: 4,
     baseCapacityPerMin: 240,
     verificationStatus: 'VERIFIED',
-    connectedOuterGates: ['E3', 'E5'],
+    connectedOuterGates: getConnectedOuterGates('G4'),
     notes: 'West concourse entrance into A Stand Lower Tier via long promenade.'
   },
   {
@@ -76,7 +77,7 @@ export const CHINNASWAMY_INNER_GATES: InnerGate[] = [
     turnstileCount: 5,
     baseCapacityPerMin: 300,
     verificationStatus: 'VERIFIED',
-    connectedOuterGates: ['E3', 'E2', 'E1'],
+    connectedOuterGates: getConnectedOuterGates('G5'),
     notes: 'Major public vomitory feeding A Stand from Cubbon Road gates E1, E2, E3.'
   },
   {
@@ -90,7 +91,7 @@ export const CHINNASWAMY_INNER_GATES: InnerGate[] = [
     turnstileCount: 4,
     baseCapacityPerMin: 240,
     verificationStatus: 'VERIFIED',
-    connectedOuterGates: ['E1', 'E23'],
+    connectedOuterGates: getConnectedOuterGates('G6'),
     notes: 'North-west concourse portal leading to B Stand.'
   },
   {
@@ -104,7 +105,7 @@ export const CHINNASWAMY_INNER_GATES: InnerGate[] = [
     turnstileCount: 3,
     baseCapacityPerMin: 180,
     verificationStatus: 'VERIFIED',
-    connectedOuterGates: ['E23', 'E22'],
+    connectedOuterGates: getConnectedOuterGates('G7'),
     notes: 'Direct access portal for Platinum Lounge and West C Stand.'
   },
   {
@@ -118,7 +119,7 @@ export const CHINNASWAMY_INNER_GATES: InnerGate[] = [
     turnstileCount: 6,
     baseCapacityPerMin: 360,
     verificationStatus: 'VERIFIED',
-    connectedOuterGates: ['E22', 'E21'],
+    connectedOuterGates: getConnectedOuterGates('G8'),
     notes: 'Central high-volume North entrance directly adjacent to emergency medical bay.'
   },
   {
@@ -132,7 +133,7 @@ export const CHINNASWAMY_INNER_GATES: InnerGate[] = [
     turnstileCount: 5,
     baseCapacityPerMin: 300,
     verificationStatus: 'VERIFIED',
-    connectedOuterGates: ['E20', 'E19'],
+    connectedOuterGates: getConnectedOuterGates('G9'),
     notes: 'North-East turnstile cluster with dedicated green holding enclosure.'
   },
   {
@@ -146,7 +147,7 @@ export const CHINNASWAMY_INNER_GATES: InnerGate[] = [
     turnstileCount: 4,
     baseCapacityPerMin: 240,
     verificationStatus: 'VERIFIED',
-    connectedOuterGates: ['E19', 'E18'],
+    connectedOuterGates: getConnectedOuterGates('G10'),
     notes: 'Corner vomitory feeding Grand Terrace from Gate E18/E19.'
   },
   {
@@ -160,7 +161,7 @@ export const CHINNASWAMY_INNER_GATES: InnerGate[] = [
     turnstileCount: 4,
     baseCapacityPerMin: 240,
     verificationStatus: 'VERIFIED',
-    connectedOuterGates: ['E17'],
+    connectedOuterGates: getConnectedOuterGates('G11'),
     notes: 'East concourse upper turnstile bank receiving spectators from Gate E17.'
   },
   {
@@ -174,7 +175,7 @@ export const CHINNASWAMY_INNER_GATES: InnerGate[] = [
     turnstileCount: 4,
     baseCapacityPerMin: 240,
     verificationStatus: 'VERIFIED',
-    connectedOuterGates: ['E17', 'E16'],
+    connectedOuterGates: getConnectedOuterGates('G12'),
     notes: 'Dedicated staircase access to the prominent H Upper Tier.'
   },
   {
@@ -188,7 +189,7 @@ export const CHINNASWAMY_INNER_GATES: InnerGate[] = [
     turnstileCount: 5,
     baseCapacityPerMin: 300,
     verificationStatus: 'VERIFIED',
-    connectedOuterGates: ['E16', 'E15'],
+    connectedOuterGates: getConnectedOuterGates('G13'),
     notes: 'Mid East concourse portal with dedicated green holding pen.'
   },
   {
@@ -202,7 +203,7 @@ export const CHINNASWAMY_INNER_GATES: InnerGate[] = [
     turnstileCount: 6,
     baseCapacityPerMin: 360,
     verificationStatus: 'VERIFIED',
-    connectedOuterGates: ['E13', 'E12'],
+    connectedOuterGates: getConnectedOuterGates('G14'),
     notes: 'High-throughput ingress cluster fed by the dual Link Road gates E12 & E13.'
   },
   {
@@ -216,7 +217,7 @@ export const CHINNASWAMY_INNER_GATES: InnerGate[] = [
     turnstileCount: 4,
     baseCapacityPerMin: 240,
     verificationStatus: 'VERIFIED',
-    connectedOuterGates: ['E12', 'E11'],
+    connectedOuterGates: getConnectedOuterGates('G15'),
     notes: 'South-east vomitory feeding M2 Annexe and connecting to MG Road corridor via E11.'
   }
 ];

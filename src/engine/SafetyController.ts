@@ -14,7 +14,12 @@ import { CrowdInteractionAnalysis } from './CrowdInteractionAnalyzer';
 import { KSCA_STADIUM_SECTORS } from './ChinnaswamyData';
 import { RoadSectorId } from '../types/simulation';
 
-export type InterventionType = 'METERING' | 'REROUTING' | 'DIRECTIONAL_SEPARATION' | 'QUEUE_MANAGEMENT';
+export type InterventionType =
+  | 'METERING'
+  | 'REROUTING'
+  | 'DIRECTIONAL_SEPARATION'
+  | 'QUEUE_MANAGEMENT'
+  | 'TURNSTILE_LOAD_BALANCING';
 
 export interface SafetyInterventionLogEntry {
   id: string;

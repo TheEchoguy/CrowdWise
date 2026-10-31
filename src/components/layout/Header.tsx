@@ -1,11 +1,13 @@
 import React from 'react';
 import { useSimulationStore } from '../../state/useSimulationStore';
-import { ShieldAlert, FileText, WifiOff, Users, Activity, Cpu, Building2 } from 'lucide-react';
+import { ShieldAlert, FileText, WifiOff, Users, Activity, Cpu, Building2, FlaskConical } from 'lucide-react';
 
 export const Header: React.FC = () => {
   const telemetry = useSimulationStore((s) => s.telemetry);
   const toggleModal = useSimulationStore((s) => s.toggleModal);
   const toggleBenchmark = useSimulationStore((s) => s.toggleBenchmark);
+  const toggleScenarioLab = useSimulationStore((s) => s.toggleScenarioLab);
+  const toggleSafetyIntelligence = useSimulationStore((s) => s.toggleSafetyIntelligence);
   const appMode = useSimulationStore((s) => s.appMode);
   const setAppMode = useSimulationStore((s) => s.setAppMode);
 
@@ -76,6 +78,26 @@ export const Header: React.FC = () => {
               <span>Stadium Blueprint</span>
             </>
           )}
+        </button>
+
+        {/* Scenario Lab Modal Trigger */}
+        <button
+          onClick={toggleScenarioLab}
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-purple-500/80 bg-purple-950/80 hover:bg-purple-900 text-purple-300 font-bold text-xs shadow-md shadow-purple-950/50 transition"
+          title="Open Predictive Crowd Safety & Scenario Experimentation Lab"
+        >
+          <FlaskConical className="w-3.5 h-3.5 text-purple-400" />
+          <span>Scenario Lab</span>
+        </button>
+
+        {/* Safety Intelligence Dashboard Trigger */}
+        <button
+          onClick={toggleSafetyIntelligence}
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-indigo-500/80 bg-indigo-950/80 hover:bg-indigo-900 text-indigo-300 font-bold text-xs shadow-md shadow-indigo-950/50 transition"
+          title="Open Safety Intelligence, Predictive Analytics & Operational Decision Support"
+        >
+          <Activity className="w-3.5 h-3.5 text-indigo-400" />
+          <span>Safety Intelligence</span>
         </button>
 
         {/* Physics Benchmark Modal Trigger */}

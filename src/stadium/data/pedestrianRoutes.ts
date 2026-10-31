@@ -147,6 +147,19 @@ export const CHINNASWAMY_PEDESTRIAN_ROUTES: PedestrianRoute[] = [
     description: 'Secondary North fence ingress into C Stand. Connection unverified in blueprint crop.'
   },
   {
+    id: 'ROUTE_E20_G8',
+    outerGateId: 'E20',
+    innerGateId: 'G8',
+    points: [
+      { x: 825, y: 185 },
+      { x: 805, y: 230 },
+      { x: 780, y: 275 }
+    ],
+    verificationStatus: 'UNVERIFIED',
+    flowDirection: 'INBOUND',
+    description: 'Western branch from Gate E20 leading to C Stand Main turnstiles.'
+  },
+  {
     id: 'ROUTE_E20_G9',
     outerGateId: 'E20',
     innerGateId: 'G9',
@@ -212,6 +225,19 @@ export const CHINNASWAMY_PEDESTRIAN_ROUTES: PedestrianRoute[] = [
     verificationStatus: 'UNVERIFIED',
     flowDirection: 'INBOUND',
     description: 'Corner portal connection from BRV Junction. Marked UNVERIFIED.'
+  },
+  {
+    id: 'ROUTE_E4_G11',
+    outerGateId: 'E4',
+    innerGateId: 'G11',
+    points: [
+      { x: 1025, y: 195 },
+      { x: 1040, y: 300 },
+      { x: 1050, y: 420 }
+    ],
+    verificationStatus: 'UNVERIFIED',
+    flowDirection: 'INBOUND',
+    description: 'Corner portal branch heading South-East towards E Stand upper concourse.'
   },
 
   // ─── LINK ROAD / ST. MARKS EAST INGRESS ROUTES ──────────────────────
@@ -314,6 +340,21 @@ export const CHINNASWAMY_PEDESTRIAN_ROUTES: PedestrianRoute[] = [
     description: 'Dual high-capacity entrance into M3 & M4 Stands with dedicated holding area.'
   },
   {
+    id: 'ROUTE_E13_G15',
+    outerGateId: 'E13',
+    innerGateId: 'G15',
+    points: [
+      { x: 1240, y: 640 },
+      { x: 1140, y: 690 },
+      { x: 1060, y: 740 },
+      { x: 975, y: 780 }
+    ],
+    verificationStatus: 'VERIFIED',
+    holdingAreaId: 'HOLDING_G14',
+    flowDirection: 'INBOUND',
+    description: 'High-volume branch from Gate E13 feeding M2 Annexe turnstiles.'
+  },
+  {
     id: 'ROUTE_E12_G14',
     outerGateId: 'E12',
     innerGateId: 'G14',
@@ -373,6 +414,45 @@ export const CHINNASWAMY_PEDESTRIAN_ROUTES: PedestrianRoute[] = [
     description: 'RESTRICTED: Players, match officials and VIP escort carriageway to Members Pavilion.'
   },
   {
+    id: 'ROUTE_E5_G5',
+    outerGateId: 'E5',
+    innerGateId: 'G5',
+    points: [
+      { x: 360, y: 310 },
+      { x: 430, y: 390 },
+      { x: 530, y: 480 }
+    ],
+    verificationStatus: 'RESTRICTED',
+    flowDirection: 'INBOUND',
+    description: 'RESTRICTED: VIP access into A Stand upper executive boxes.'
+  },
+  {
+    id: 'ROUTE_E6_G4',
+    outerGateId: 'E6',
+    innerGateId: 'G4',
+    points: [
+      { x: 325, y: 410 },
+      { x: 390, y: 520 },
+      { x: 480, y: 640 }
+    ],
+    verificationStatus: 'RESTRICTED',
+    flowDirection: 'INBOUND',
+    description: 'RESTRICTED: Broadcast crew and OB van access to A Stand compound.'
+  },
+  {
+    id: 'ROUTE_E7_G4',
+    outerGateId: 'E7',
+    innerGateId: 'G4',
+    points: [
+      { x: 290, y: 520 },
+      { x: 380, y: 580 },
+      { x: 480, y: 640 }
+    ],
+    verificationStatus: 'RESTRICTED',
+    flowDirection: 'INBOUND',
+    description: 'RESTRICTED: Pavilion private service carriageway.'
+  },
+  {
     id: 'ROUTE_E8_G3',
     outerGateId: 'E8',
     innerGateId: 'G3',
@@ -399,6 +479,20 @@ export const CHINNASWAMY_PEDESTRIAN_ROUTES: PedestrianRoute[] = [
     verificationStatus: 'RESTRICTED',
     flowDirection: 'INBOUND',
     description: 'RESTRICTED: Authorized access from Queens Road drop-off to P1 Annexe / P-Loft.'
+  },
+  {
+    id: 'ROUTE_E9_G2',
+    outerGateId: 'E9',
+    innerGateId: 'G2',
+    points: [
+      { x: 460, y: 760 },
+      { x: 540, y: 810 },
+      { x: 610, y: 860 },
+      { x: 670, y: 895 }
+    ],
+    verificationStatus: 'RESTRICTED',
+    flowDirection: 'INBOUND',
+    description: 'RESTRICTED: Police security post and perimeter link to P-Loft.'
   },
   {
     id: 'ROUTE_E10_G1',

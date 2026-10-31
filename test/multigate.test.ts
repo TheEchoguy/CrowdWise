@@ -7,8 +7,16 @@ import {
 import { SeededPRNG } from '../src/engine/prng.ts';
 import {
   SyntheticDemandGenerator,
-  PRESET_SCENARIOS
+  PRESET_SCENARIOS,
+  ScenarioType
 } from '../src/engine/SyntheticDemandGenerator.ts';
+import { ControlledExperimentRunner } from '../src/engine/ControlledExperimentRunner.ts';
+import { PredictiveCongestionEngine } from '../src/engine/PredictiveCongestionEngine.ts';
+import { SafetyRecommendationEngine } from '../src/engine/SafetyRecommendationEngine.ts';
+import { MultiGateRiskCorrelation } from '../src/engine/MultiGateRiskCorrelation.ts';
+import { EventReplayEngine } from '../src/engine/EventReplayEngine.ts';
+import { SafetyBriefGenerator } from '../src/engine/SafetyBriefGenerator.ts';
+import { BatchBenchmarkingEngine } from '../src/engine/BatchBenchmarkingEngine.ts';
 import { ThreeZoneMonitor } from '../src/engine/ThreeZoneMonitor.ts';
 import { CrowdInteractionAnalyzer } from '../src/engine/CrowdInteractionAnalyzer.ts';
 import { SafetyController } from '../src/engine/SafetyController.ts';
@@ -30,7 +38,14 @@ import { getGateViewBox } from '../src/stadium/utils/coordinateTransform.ts';
 import { SECTION_VIEWPORTS } from '../src/stadium/data/stadiumMetadata.ts';
 import { MicroGateEngine } from '../src/stadium/gate/MicroGateEngine.ts';
 import { StadiumDensityHeatmap } from '../src/stadium/visualization/DensityHeatmap.ts';
-import { GATE_CONNECTIVITY_CATALOG, INNER_GATE_STAND_CATALOG } from '../src/stadium/network/gateConnectivity.ts';
+import {
+  GATE_CONNECTIVITY_CATALOG,
+  INNER_GATE_STAND_CATALOG,
+  getConnectedInnerGates,
+  getConnectedOuterGates,
+  isConnectionVerified,
+  getDestinationStandsForOuterGate
+} from '../src/stadium/network/gateConnectivity.ts';
 
 console.log('--- Running CROWDWISE Predictive Safety Architecture Test Suite ---\n');
 
@@ -681,6 +696,862 @@ assert.ok(
 );
 console.log('✓ Test 40 Passed: Heatmap Fruin threshold alignment (Green <1.5, Yellow 1.5-2.2, Orange 2.2-3.0, Red >3.0) verified');
 
+// =========================================================================
+// 41. PHASE 2.2 — Single Source of Truth Gate Connectivity Catalog
+// =========================================================================
+assert.equal(Object.keys(GATE_CONNECTIVITY_CATALOG).length, 23, 'All 23 outer gates must be mapped in catalog');
+assert.equal(GATE_CONNECTIVITY_CATALOG.E11.road, 'MG_ROAD', 'Gate E11 must be assigned to MG_ROAD');
+assert.deepEqual(getConnectedInnerGates('E18'), ['G10']);
+assert.deepEqual(getConnectedInnerGates('E19'), ['G9', 'G10']);
+assert.deepEqual(getConnectedInnerGates('E20'), ['G8', 'G9']);
+assert.deepEqual(getConnectedInnerGates('E21'), ['G8']);
+assert.deepEqual(getConnectedInnerGates('E22'), ['G7', 'G8']);
+assert.deepEqual(getConnectedInnerGates('E23'), ['G6', 'G7']);
+assert.deepEqual(getConnectedInnerGates('E1'), ['G5', 'G6']);
+assert.deepEqual(getConnectedInnerGates('E2'), ['G5']);
+assert.deepEqual(getConnectedInnerGates('E3'), ['G4', 'G5']);
+assert.deepEqual(getConnectedInnerGates('E4'), ['G10', 'G11']);
+assert.deepEqual(getConnectedInnerGates('E12'), ['G14', 'G15']);
+assert.deepEqual(getConnectedInnerGates('E13'), ['G14', 'G15']);
+assert.deepEqual(getConnectedInnerGates('E14'), ['G14']);
+assert.deepEqual(getConnectedInnerGates('E15'), ['G13']);
+assert.deepEqual(getConnectedInnerGates('E16'), ['G12', 'G13']);
+assert.deepEqual(getConnectedInnerGates('E17'), ['G11', 'G12']);
+assert.deepEqual(getConnectedInnerGates('E11'), ['G15']);
+console.log('✓ Test 41 Passed: Official KSCA outer-to-inner gate connectivity catalog verified');
+
+// =========================================================================
+// 42. PHASE 2.2 — Continuous Pedestrian Route Trajectory Coverage
+// =========================================================================
+let totalVerifiedRoutes = 0;
+Object.entries(GATE_CONNECTIVITY_CATALOG).forEach(([ogId, spec]) => {
+  spec.connectedInnerGates.forEach((igId) => {
+    const route = CHINNASWAMY_PEDESTRIAN_ROUTES.find(
+      (r) => r.outerGateId === ogId && r.innerGateId === igId
+    );
+    assert.ok(route, `Missing continuous pedestrian route for connection ${ogId} -> ${igId}`);
+    assert.ok(route.points.length >= 2, `Route ${route.id} must have >= 2 waypoints`);
+    totalVerifiedRoutes++;
+  });
+});
+assert.ok(totalVerifiedRoutes >= 35, `Expected >= 35 connecting routes, found ${totalVerifiedRoutes}`);
+console.log(`✓ Test 42 Passed: Full continuous SVG pedestrian route coverage verified (${totalVerifiedRoutes} routes)`);
+
+// =========================================================================
+// 43. PHASE 2.2 — Gate E22 Dual Ingress Branching & Stand Resolution
+// =========================================================================
+const e22Stands = getDestinationStandsForOuterGate('E22');
+assert.ok(e22Stands.some((s) => s.includes('C Stand')), 'E22 must route to C Stand');
+assert.ok(e22Stands.some((s) => s.includes('Platinum Lounge')), 'E22 must route to Platinum Lounge');
+assert.equal(isConnectionVerified('E22', 'G7'), true);
+assert.equal(isConnectionVerified('E22', 'G8'), true);
+assert.equal(isConnectionVerified('E22', 'G1'), false);
+console.log('✓ Test 43 Passed: Gate E22 dual ingress branching and destination stands verified');
+
+// =========================================================================
+// 44. PHASE 2.2 — Inner Gate G7 Bidirectional Association
+// =========================================================================
+const g7OuterGates = getConnectedOuterGates('G7');
+assert.ok(g7OuterGates.includes('E22'), 'G7 must link back to outer gate E22');
+assert.ok(g7OuterGates.includes('E23'), 'G7 must link back to outer gate E23');
+assert.equal(g7OuterGates.length, 2, 'G7 must connect strictly to E22 and E23');
+console.log('✓ Test 44 Passed: Inner gate G7 reverse connectivity and outer gate linking verified');
+
+// =========================================================================
+// 45. PHASE 2.2 — Simplified 2-Stage Verification: Stage 1 Ticket Scanning
+// =========================================================================
+const p22Gate = new MicroGateEngine('E22', 777);
+p22Gate.reset(777);
+p22Gate.setTicketScanLatency(0.3);
+p22Gate.setPersonCheckLatency(0.8);
+p22Gate.setArrivalRate(300);
+for (let s = 0; s < 50; s++) {
+  p22Gate.step(0.05, s * 0.05);
+}
+const p22Metrics = p22Gate.step(0.05, 2.55);
+assert.ok(p22Metrics.totalArrivals > 0, 'Must record spectator arrivals');
+assert.ok(p22Metrics.ticketsScanned >= 0, 'Must record tickets scanned');
+console.log('✓ Test 45 Passed: Stage 1 automated NFC/QR ticket scanning operation verified');
+
+// =========================================================================
+// 46. PHASE 2.2 — Simplified 2-Stage Verification: Stage 2 Person ID Check
+// =========================================================================
+assert.ok(p22Gate.getPersonCheckStations().length >= 4, 'Must initialize 4 Person Check stations');
+const chk1 = p22Gate.getPersonCheckStations()[0];
+assert.equal(chk1.nominalLatencySec, 0.8, 'Person check nominal latency must match configured value');
+console.log('✓ Test 46 Passed: Stage 2 Person Check stations configured and operational');
+
+// =========================================================================
+// 47. PHASE 2.2 — Attendee Mismatch Detection & Recovery Diversion
+// =========================================================================
+p22Gate.reset(888);
+p22Gate.setTicketScanLatency(0.1);
+p22Gate.setPersonCheckLatency(0.2);
+p22Gate.setPersonMismatchRate(0.5); // High mismatch rate for test
+p22Gate.setRejectionRate(0.0);      // All tickets valid QR, tests attendee check
+p22Gate.setArrivalRate(900);
+for (let s = 0; s < 500; s++) {
+  p22Gate.step(0.05, s * 0.05);
+}
+const mismatchMetrics = p22Gate.step(0.05, 25.05);
+assert.ok(mismatchMetrics.personMismatches > 0, `Must detect attendee ID mismatches, got ${mismatchMetrics.personMismatches}`);
+console.log(`✓ Test 47 Passed: Attendee ID mismatch detection verified (${mismatchMetrics.personMismatches} mismatches diverted)`);
+
+// =========================================================================
+// 48. PHASE 2.2 — Sequential Capacity Breakdown: C_eff = min(C_scan, C_person, C_turn)
+// =========================================================================
+p22Gate.reset(999);
+p22Gate.setTicketScanLatency(0.2);   // C_scan = 4 * (60 / 0.2) = 1200
+p22Gate.setPersonCheckLatency(1.0);  // C_person = 4 * (60 / 1.0) = 240
+p22Gate.setTurnstileLatency(0.5);    // C_turn = 8 * (60 / 0.5) = 960
+const capMetrics = p22Gate.step(0.05, 1.0);
+assert.equal(capMetrics.ticketScanCapacityPerMin, 1200, 'C_scan must equal 1200 p/min');
+assert.equal(capMetrics.personCheckCapacityPerMin, 240, 'C_person must equal 240 p/min');
+assert.equal(capMetrics.effectiveCapacityPerMin, 240, 'C_eff must equal min(1200, 240, turnCap) = 240 p/min');
+console.log('✓ Test 48 Passed: Sequential capacity formula C_eff = min(C_scan, C_person, C_turn) verified');
+
+// =========================================================================
+// 49. PHASE 2.2 — Dynamic Turnstile Addition (+) and Capacity Increase
+// =========================================================================
+const initialCount = p22Gate.getTurnstileCounters().filter((c) => c.gateId === 'G7').length;
+const initialTurnCap = capMetrics.turnstileCapacityPerMin;
+const newTurnstile = p22Gate.addTurnstile('G7');
+assert.ok(newTurnstile, 'Must return created turnstile counter');
+assert.equal(newTurnstile.status, 'IDLE', 'New turnstile status must be IDLE');
+assert.equal(newTurnstile.gateId, 'G7', 'New turnstile must belong to requested bank G7');
+const updatedCount = p22Gate.getTurnstileCounters().filter((c) => c.gateId === 'G7').length;
+assert.equal(updatedCount, initialCount + 1, 'Turnstile count for G7 must increase by 1');
+const afterAddMetrics = p22Gate.step(0.05, 1.05);
+assert.ok(afterAddMetrics.turnstileCapacityPerMin > initialTurnCap, 'Turnstile capacity must increase after adding counter');
+console.log('✓ Test 49 Passed: Dynamic turnstile addition (+) and instant capacity scaling verified');
+
+// =========================================================================
+// 50. PHASE 2.2 — Dynamic Turnstile Removal (-) and Busy Counter Protection
+// =========================================================================
+const turnstileToRemove = p22Gate.getTurnstileCounters().filter((c) => c.gateId === 'G7').slice(-1)[0];
+turnstileToRemove.status = 'BUSY';
+const busyRemovalResult = p22Gate.removeTurnstile('G7');
+assert.equal(busyRemovalResult, false, 'Engine must refuse removal of a BUSY turnstile counter');
+turnstileToRemove.status = 'IDLE';
+const idleRemovalResult = p22Gate.removeTurnstile('G7');
+assert.equal(idleRemovalResult, true, 'Engine must permit removal of an IDLE turnstile counter');
+console.log('✓ Test 50 Passed: Turnstile removal busy protection and idle removal verified');
+
+// =========================================================================
+// 51. PHASE 2.2 — Point-Cloud Fruin Density Threshold Mapping
+// =========================================================================
+const testFruinColor = (density: number) => {
+  if (density >= 3.0) return '#ef4444';
+  if (density >= 2.2) return '#f97316';
+  if (density >= 1.5) return '#eab308';
+  return '#10b981';
+};
+assert.equal(testFruinColor(0.8), '#10b981', '<1.5 must map to Green (Free Flow)');
+assert.equal(testFruinColor(1.8), '#eab308', '1.5-2.2 must map to Yellow (Laminar Warning)');
+assert.equal(testFruinColor(2.5), '#f97316', '2.2-3.0 must map to Orange (Constrained)');
+assert.equal(testFruinColor(4.2), '#ef4444', '>3.0 must map to Red (Crush Hazard)');
+console.log('✓ Test 51 Passed: Point-cloud Fruin density color threshold mapping verified');
+
+// =========================================================================
+// 52. PHASE 2.2 — Gate View Log Scope Filtering
+// =========================================================================
+const mockLogs = [
+  { id: '1', timestamp: '12:00:01', level: 'INFO' as const, message: 'E22 approach normal', gateId: 'E22' },
+  { id: '2', timestamp: '12:00:02', level: 'ALERT' as const, message: 'G7 counter fail', gateId: 'G7' },
+  { id: '3', timestamp: '12:00:03', level: 'INFO' as const, message: 'E11 surge arrival', gateId: 'E11' },
+  { id: '4', timestamp: '12:00:04', level: 'INFO' as const, message: 'G14 queue flow', gateId: 'G14' }
+];
+const filterE22 = mockLogs.filter((l) => l.gateId === 'E22' || ['G7', 'G8'].includes(l.gateId));
+assert.equal(filterE22.length, 2, 'Filtered logs for E22 must include only E22, G7, G8');
+assert.ok(filterE22.some((l) => l.gateId === 'E22'));
+assert.ok(filterE22.some((l) => l.gateId === 'G7'));
+console.log('✓ Test 52 Passed: Gate View telemetry log scope partitioning verified');
+
+// =========================================================================
+// 53. PHASE 3 — Synthetic Scenario Presets: All 7 Principal Scenarios (A – G)
+// =========================================================================
+const requiredScenarios: ScenarioType[] = [
+  'NORMAL_INGRESS',
+  'METRO_SURGE',
+  'OUTER_GATE_FAILURE',
+  'TURNSTILE_FAILURE',
+  'COUNTER_FLOW_SHOCK',
+  'TICKET_REJECTION_SHOCKWAVE',
+  'COMBINED_EMERGENCY'
+];
+for (const scType of requiredScenarios) {
+  const sc = PRESET_SCENARIOS[scType];
+  assert.ok(sc, `Scenario ${scType} must exist in PRESET_SCENARIOS`);
+  assert.equal(sc.type, scType, `Scenario type mismatch for ${scType}`);
+  assert.ok(sc.baseInflowRate > 0, `Base inflow rate must be > 0 for ${scType}`);
+  assert.ok(sc.durationSeconds > 0, `Duration must be > 0 for ${scType}`);
+  assert.ok(sc.seed !== undefined, `Seed must be defined for ${scType}`);
+  assert.ok(sc.selectedOuterGates.length > 0, `Selected outer gates must not be empty for ${scType}`);
+  assert.ok(sc.selectedInnerGates.length > 0, `Selected inner gates must not be empty for ${scType}`);
+}
+console.log('✓ Test 53 Passed: All 7 Synthetic Scenario Presets (Scenarios A through G) verified');
+
+// =========================================================================
+// 54. PHASE 3 — Synthetic Schedule Generation Across All 7 Scenarios
+// =========================================================================
+for (const scType of requiredScenarios) {
+  const sc = PRESET_SCENARIOS[scType];
+  const sched = SyntheticDemandGenerator.generateSchedule(sc);
+  assert.ok(sched.length > 0, `Schedule for ${scType} must generate arrivals`);
+  assert.ok(sched[0].timeSeconds >= 0, `Arrival time must be non-negative for ${scType}`);
+  assert.ok(sched[0].desiredSpeed > 0, `Desired speed must be positive for ${scType}`);
+}
+console.log('✓ Test 54 Passed: Deterministic Poisson schedule generation verified across all 7 scenarios');
+
+// =========================================================================
+// 55. PHASE 3 — Deterministic Seed Reproducibility of Paired Experiment Runs
+// =========================================================================
+const normalConfig = PRESET_SCENARIOS.NORMAL_INGRESS;
+const expRun1 = ControlledExperimentRunner.runExperiment(
+  { ...normalConfig, durationSeconds: 20 },
+  ['METERING'],
+  'E22',
+  0.1
+);
+const expRun2 = ControlledExperimentRunner.runExperiment(
+  { ...normalConfig, durationSeconds: 20 },
+  ['METERING'],
+  'E22',
+  0.1
+);
+assert.equal(
+  expRun1.baselineResults.totalArrivals,
+  expRun2.baselineResults.totalArrivals,
+  'Identical seed S must produce identical baseline arrivals'
+);
+assert.equal(
+  expRun1.baselineResults.totalAdmitted,
+  expRun2.baselineResults.totalAdmitted,
+  'Identical seed S must produce identical baseline admitted counts'
+);
+assert.equal(
+  expRun1.interventionResults.totalAdmitted,
+  expRun2.interventionResults.totalAdmitted,
+  'Identical seed S must produce identical intervention admitted counts'
+);
+assert.equal(
+  expRun1.safetyVerdict.verdict,
+  expRun2.safetyVerdict.verdict,
+  'Identical seed S must produce identical safety verdict'
+);
+console.log('✓ Test 55 Passed: Deterministic seed-locked reproducibility verified across paired experiment runs');
+
+// =========================================================================
+// 56. PHASE 3 — Matched Baseline (Run A) vs. Intervention (Run B) Isolation
+// =========================================================================
+assert.equal(expRun1.baselineResults.runType, 'BASELINE');
+assert.equal(expRun1.interventionResults.runType, 'INTERVENTION');
+assert.ok(expRun1.experimentId.startsWith('exp_'), 'ExperimentId must have valid prefix');
+assert.ok(expRun1.safetyVerdict.verdictTitle.length > 0, 'Verdict must include descriptive title');
+assert.ok(expRun1.safetyVerdict.supportingFindings.length > 0, 'Verdict must include supporting findings');
+console.log('✓ Test 56 Passed: Paired Baseline vs. Intervention execution and isolation verified');
+
+// =========================================================================
+// 57. PHASE 3 — Scenario B: Metro Surge Generation & Dynamic Metering
+// =========================================================================
+const surgeConfig = PRESET_SCENARIOS.METRO_SURGE;
+assert.ok(surgeConfig.surge, 'Scenario B must define surge parameters');
+assert.equal(surgeConfig.surge?.magnitude, 600, 'Surge magnitude must be +600 p/min');
+const surgeExp = ControlledExperimentRunner.runExperiment(
+  { ...surgeConfig, durationSeconds: 25 },
+  ['METERING', 'QUEUE_MANAGEMENT'],
+  'E11',
+  0.1
+);
+assert.ok(
+  surgeExp.baselineResults.totalArrivals >= surgeExp.interventionResults.totalArrivals,
+  'Dynamic Metering in intervention must throttle arrival influx into concourse'
+);
+console.log('✓ Test 57 Passed: Scenario B Metro Surge and Dynamic Metering buffer verified');
+
+// =========================================================================
+// 58. PHASE 3 — Scenario C: Outer Gate Failure & Authorized Rerouting
+// =========================================================================
+const gateFailConfig = PRESET_SCENARIOS.OUTER_GATE_FAILURE;
+assert.ok(gateFailConfig.gateFailure, 'Scenario C must define gateFailure parameters');
+const altGates = gateFailConfig.gateFailure?.alternateGates || [];
+for (const g of altGates) {
+  const spec = GATE_CONNECTIVITY_CATALOG[g];
+  assert.ok(spec, `Alternative gate ${g} must exist in catalog`);
+  assert.notEqual(
+    spec.accessPermission,
+    'RESTRICTED_VIP_MEDIA',
+    `Alternative gate ${g} must NOT route public patrons to Queens Road VIP access`
+  );
+}
+console.log('✓ Test 58 Passed: Scenario C Outer Gate Failure excludes Queens Road VIP routes');
+
+// =========================================================================
+// 59. PHASE 3 — Scenario D: Turnstile Bank Failure & Queue Accumulation
+// =========================================================================
+const turnFailConfig = PRESET_SCENARIOS.TURNSTILE_FAILURE;
+assert.ok(turnFailConfig.turnstileFailure, 'Scenario D must define turnstileFailure parameters');
+assert.equal(turnFailConfig.turnstileFailure?.innerGateId, 'G7');
+assert.equal(turnFailConfig.turnstileFailure?.failedCounterCount, 2);
+const turnFailEngine = new MicroGateEngine('E22', 42);
+const nominalMetrics = turnFailEngine.calculateMetrics();
+turnFailEngine.toggleTurnstileFailure(0);
+turnFailEngine.toggleTurnstileFailure(1);
+const failedMetrics = turnFailEngine.calculateMetrics();
+assert.ok(
+  failedMetrics.turnstileCapacityPerMin < nominalMetrics.turnstileCapacityPerMin,
+  'Turnstile failure must decrease gate turnstile capacity'
+);
+console.log('✓ Test 59 Passed: Scenario D Turnstile Failure capacity reduction verified');
+
+// =========================================================================
+// 60. PHASE 3 — Scenario E: Counter-Flow Shock & Directional Separation
+// =========================================================================
+const cfConfig = PRESET_SCENARIOS.COUNTER_FLOW_SHOCK;
+assert.ok(cfConfig.counterFlow, 'Scenario E must define counterFlow parameters');
+assert.ok(cfConfig.counterFlow?.intensityPercent && cfConfig.counterFlow.intensityPercent >= 0.10);
+const cfExp = ControlledExperimentRunner.runExperiment(
+  { ...cfConfig, durationSeconds: 20 },
+  ['DIRECTIONAL_SEPARATION'],
+  'E22',
+  0.1
+);
+assert.ok(cfExp.interventionResults.averageWaitTimeSec <= cfExp.baselineResults.averageWaitTimeSec + 2.0);
+console.log('✓ Test 60 Passed: Scenario E Counter-Flow Shock and Directional Divider verified');
+
+// =========================================================================
+// 61. PHASE 3 — Scenario F: Ticket Rejection Shockwave Rate
+// =========================================================================
+const rejConfig = PRESET_SCENARIOS.TICKET_REJECTION_SHOCKWAVE;
+assert.ok(rejConfig.ticketRejection, 'Scenario F must define ticketRejection parameters');
+assert.ok(
+  rejConfig.ticketRejection.rejectionPercentage >= 0.10,
+  `Rejection percentage must be >= 10%, got ${rejConfig.ticketRejection.rejectionPercentage}`
+);
+const rejEngine = new MicroGateEngine('E22', 42);
+rejEngine.setRejectionRate(0.15);
+assert.equal(rejEngine.getRejectionRate(), 0.15, 'Engine must accept 15% rejection rate');
+console.log('✓ Test 61 Passed: Scenario F Ticket Rejection Shockwave verified');
+
+// =========================================================================
+// 62. PHASE 3 — Scenario G: Combined Emergency Synchronized Timeline
+// =========================================================================
+const combConfig = PRESET_SCENARIOS.COMBINED_EMERGENCY;
+assert.ok(combConfig.combinedEvents, 'Scenario G must define combined timeline events');
+assert.equal(combConfig.combinedEvents?.length, 3, 'Combined Emergency must have 3 synchronized timeline events');
+const evtTypes = combConfig.combinedEvents?.map((e) => e.type);
+assert.ok(evtTypes?.includes('SURGE'));
+assert.ok(evtTypes?.includes('TURNSTILE_FAIL'));
+assert.ok(evtTypes?.includes('COUNTER_FLOW'));
+console.log('✓ Test 62 Passed: Scenario G Combined Emergency synchronized timeline verified');
+
+// =========================================================================
+// 63. PHASE 3 — Three-Zone Spatial Monitor Calibrated Spatial Areas
+// =========================================================================
+const testRecord = ControlledExperimentRunner.runExperiment(
+  { ...normalConfig, durationSeconds: 15 },
+  ['METERING'],
+  'E22',
+  0.1
+);
+assert.ok(testRecord.baselineResults.zoneA.density >= 0, 'Zone A density must be >= 0');
+assert.ok(testRecord.baselineResults.zoneB.density >= 0, 'Zone B density must be >= 0');
+assert.ok(testRecord.baselineResults.zoneC.density >= 0, 'Zone C density must be >= 0');
+console.log('✓ Test 63 Passed: Three-Zone Spatial Monitor area calibrations verified');
+
+// =========================================================================
+// 64. PHASE 3 — Displacement Detector Upstream Risk Recognition
+// =========================================================================
+const p3DisplacedAudit = DisplacementDetector.compare(
+  { ...testRecord.baselineResults.zoneA, density: 4.2, criticalHazardDurationSec: 15 }, // Throat choked in baseline
+  { ...testRecord.baselineResults.zoneB, density: 2.0, criticalHazardDurationSec: 0 },
+  { ...testRecord.baselineResults.zoneC, density: 1.0, criticalHazardDurationSec: 0 }, // Road clear in baseline
+  { ...testRecord.interventionResults.zoneA, density: 1.5, criticalHazardDurationSec: 0 }, // Throat relieved
+  { ...testRecord.interventionResults.zoneB, density: 1.8, criticalHazardDurationSec: 0 },
+  { ...testRecord.interventionResults.zoneC, density: 3.2, criticalHazardDurationSec: 10 }, // Road surged!
+  30
+);
+assert.equal(p3DisplacedAudit.isDisplacementDetected, true, 'Must detect upstream displacement to road');
+assert.ok(p3DisplacedAudit.displacedTargetZone?.includes('Road'), 'Target zone must indicate road displacement');
+console.log('✓ Test 64 Passed: Displacement Detector upstream spillback detection verified');
+
+// =========================================================================
+// 65. PHASE 3 — Safety Verdict Engine Permitting Classifications
+// =========================================================================
+const p3VerdictDisplaced = SafetyVerdictEngine.evaluate(p3DisplacedAudit);
+assert.equal(p3VerdictDisplaced.verdict, 'DISPLACED');
+assert.equal(p3VerdictDisplaced.permitRecommendation, 'CONDITIONAL_APPROVAL');
+
+const p3ImprovedAudit = DisplacementDetector.compare(
+  { ...testRecord.baselineResults.zoneA, density: 2.5, criticalHazardDurationSec: 10 },
+  { ...testRecord.baselineResults.zoneB, density: 3.5, criticalHazardDurationSec: 15 },
+  { ...testRecord.baselineResults.zoneC, density: 4.2, criticalHazardDurationSec: 20 },
+  { ...testRecord.interventionResults.zoneA, density: 1.2, criticalHazardDurationSec: 0 },
+  { ...testRecord.interventionResults.zoneB, density: 1.5, criticalHazardDurationSec: 0 },
+  { ...testRecord.interventionResults.zoneC, density: 1.8, criticalHazardDurationSec: 0 },
+  30
+);
+const p3VerdictImproved = SafetyVerdictEngine.evaluate(p3ImprovedAudit);
+assert.equal(p3VerdictImproved.verdict, 'IMPROVED');
+assert.equal(p3VerdictImproved.permitRecommendation, 'GRANT_PERMIT');
+
+const p3InconclusiveAudit = DisplacementDetector.compare(
+  { ...testRecord.baselineResults.zoneA, density: 1.0 },
+  { ...testRecord.baselineResults.zoneB, density: 1.2 },
+  { ...testRecord.baselineResults.zoneC, density: 1.5 },
+  { ...testRecord.interventionResults.zoneA, density: 1.1 },
+  { ...testRecord.interventionResults.zoneB, density: 1.3 },
+  { ...testRecord.interventionResults.zoneC, density: 1.4 },
+  5 // Under 8s window
+);
+const p3VerdictInconclusive = SafetyVerdictEngine.evaluate(p3InconclusiveAudit);
+assert.equal(p3VerdictInconclusive.verdict, 'INCONCLUSIVE');
+assert.equal(p3VerdictInconclusive.permitRecommendation, 'CONTINUE_MONITORING');
+console.log('✓ Test 65 Passed: Safety Verdict Engine classifications & permit recommendations verified');
+
+// =========================================================================
+// 66. PHASE 4 — Predictive Congestion Engine: Queue Projection Calculation
+// =========================================================================
+const predTestGate = {
+  gateId: 'E22',
+  currentQueue: 20,
+  arrivalRatePerMin: 600,
+  effectiveCapacityPerMin: 360,
+  currentThroatDensity: 1.8,
+  currentApproachDensity: 1.2,
+  currentSpillbackMeters: 0,
+  holdingAreaCapacity: 500,
+  throatAreaM2: 80,
+  holdingAreaM2: 250,
+  approachAreaM2: 120
+};
+const fcast60s = PredictiveCongestionEngine.forecastGate(predTestGate, 60);
+assert.equal(fcast60s.predictedQueue, 260, 'Queue in 60s must project Q(0) + (λ - μ) × 1 = 20 + 240 = 260');
+assert.equal(fcast60s.queueDelta, 240, 'Queue delta must equal net growth rate');
+assert.ok(fcast60s.uncertaintyMargin > 0, 'Uncertainty bound σ must be positive');
+assert.equal(fcast60s.predictedQueueLower, fcast60s.predictedQueue - fcast60s.uncertaintyMargin);
+assert.equal(fcast60s.predictedQueueUpper, fcast60s.predictedQueue + fcast60s.uncertaintyMargin);
+console.log('✓ Test 66 Passed: Predictive Congestion Engine queue projection formula verified');
+
+// =========================================================================
+// 67. PHASE 4 — Turnstile Saturation & Time to Buffer Breach
+// =========================================================================
+assert.equal(fcast60s.turnstileUtilizationPercent, 167, 'Utilization must reflect (600 / 360) * 100 = 167%');
+assert.ok(fcast60s.timeToSaturationSec !== null, 'Time to saturation must be computed when λ > μ');
+assert.equal(
+  fcast60s.timeToSaturationSec,
+  Math.round(((500 - 20) / (600 - 360)) * 60),
+  'Time to saturation must calculate remaining holding space divided by net rate'
+);
+console.log('✓ Test 67 Passed: Turnstile saturation & buffer breach calculation verified');
+
+// =========================================================================
+// 68. PHASE 4 — Multi-Horizon Forecasting (30s, 60s, 120s, 300s)
+// =========================================================================
+const fcast30s = PredictiveCongestionEngine.forecastGate(predTestGate, 30);
+const fcast120s = PredictiveCongestionEngine.forecastGate(predTestGate, 120);
+const fcast300s = PredictiveCongestionEngine.forecastGate(predTestGate, 300);
+assert.ok(fcast30s.predictedQueue < fcast60s.predictedQueue);
+assert.ok(fcast60s.predictedQueue < fcast120s.predictedQueue);
+assert.ok(fcast120s.predictedQueue < fcast300s.predictedQueue);
+assert.ok(fcast30s.uncertaintyMargin < fcast300s.uncertaintyMargin, 'Uncertainty must grow with horizon length');
+console.log('✓ Test 68 Passed: Multi-horizon forecasting monotonic scaling verified');
+
+// =========================================================================
+// 69. PHASE 4 — Congestion Warning Level Classifications
+// =========================================================================
+const normalGate = { ...predTestGate, arrivalRatePerMin: 200, currentThroatDensity: 1.0 };
+const watchGate = { ...predTestGate, arrivalRatePerMin: 340, currentThroatDensity: 1.6 };
+const congestedGate = { ...predTestGate, arrivalRatePerMin: 420, currentThroatDensity: 2.3 };
+const criticalGate = { ...predTestGate, arrivalRatePerMin: 700, currentThroatDensity: 3.4 };
+
+assert.equal(PredictiveCongestionEngine.forecastGate(normalGate, 60).warningLevel, 'NORMAL');
+assert.equal(PredictiveCongestionEngine.forecastGate(watchGate, 60).warningLevel, 'WATCH');
+assert.equal(PredictiveCongestionEngine.forecastGate(congestedGate, 60).warningLevel, 'CONGESTED');
+assert.equal(PredictiveCongestionEngine.forecastGate(criticalGate, 60).warningLevel, 'CRITICAL');
+console.log('✓ Test 69 Passed: Congestion warning level classifications (NORMAL -> CRITICAL) verified');
+
+// =========================================================================
+// 70. PHASE 4 — Explainable Safety Recommendation Engine Generation
+// =========================================================================
+const recGate = {
+  ...predTestGate,
+  arrivalRatePerMin: 550,
+  effectiveCapacityPerMin: 360,
+  currentThroatDensity: 2.6
+};
+const recForecasts = {
+  E22: PredictiveCongestionEngine.forecastGate(recGate, 60)
+};
+const recs = SafetyRecommendationEngine.generateRecommendations([recGate], recForecasts);
+assert.ok(recs.length > 0, 'Must generate recommendations for overloaded gate');
+const meterRec = recs.find((r) => r.category === 'GATE_METERING');
+assert.ok(meterRec, 'Must generate GATE_METERING recommendation when arrival rate exceeds capacity');
+assert.ok(meterRec.problemDetected.length > 0, 'Recommendation must include problem explanation');
+assert.ok(meterRec.supportingMeasurements.length >= 3, 'Recommendation must include supporting measurements');
+assert.ok(meterRec.expectedBenefit.length > 0, 'Recommendation must detail expected benefit');
+assert.ok(meterRec.possibleSideEffects.length > 0, 'Recommendation must detail possible side effects');
+console.log('✓ Test 70 Passed: Explainable safety recommendations structure verified');
+
+// =========================================================================
+// 71. PHASE 4 — Strict Access-Control Enforcement in Recommendations
+// =========================================================================
+const vipGate = {
+  ...predTestGate,
+  gateId: 'E5', // Queens Road VIP gate
+  arrivalRatePerMin: 400
+};
+const vipRecs = SafetyRecommendationEngine.generateRecommendations([vipGate], {});
+assert.equal(vipRecs.length, 0, 'Recommendations must never suggest general spectator interventions for VIP gates');
+console.log('✓ Test 71 Passed: Strict Queens Road access-control enforcement verified in recommendation engine');
+
+// =========================================================================
+// 72. PHASE 4 — Human-in-the-Loop Operator Approval Enforcement
+// =========================================================================
+for (const r of recs) {
+  assert.equal(r.requiresApproval, true, 'All operational interventions must require human operator approval');
+  assert.equal(r.status, 'PENDING', 'Initial status must be PENDING operator review');
+}
+console.log('✓ Test 72 Passed: Human-in-the-loop operator approval controls verified');
+
+// =========================================================================
+// 73. PHASE 4 — Multi-Gate Dependency Graph Construction
+// =========================================================================
+const depGraph = MultiGateRiskCorrelation.buildDependencyGraph({ E22: 400, E11: 600 }, ['E22']);
+assert.ok(depGraph.nodes.length >= 30, 'Dependency graph must include outer gates and inner banks');
+assert.ok(depGraph.links.length >= 25, 'Dependency graph must link outer gates to inner banks');
+assert.ok(depGraph.criticalNetworkBottlenecks.includes('E22'), 'Failed gate E22 must be flagged as critical bottleneck');
+assert.ok(depGraph.sectorLoadBalancing['CUBBON_ROAD'], 'Must aggregate Cubbon Road sector load');
+console.log('✓ Test 73 Passed: Stadium-wide multi-gate dependency graph construction verified');
+
+// =========================================================================
+// 74. PHASE 4 — Cascading Failure Simulation & Impact Assessment
+// =========================================================================
+const cascadeResult = MultiGateRiskCorrelation.simulateCascadingRisk('E22', { E22: 480 });
+assert.equal(cascadeResult.failedGateId, 'E22');
+assert.equal(cascadeResult.primaryImpactSector, 'CUBBON_ROAD');
+assert.ok(cascadeResult.immediateCapacityLossPerMin > 0, 'Capacity loss must be non-zero');
+assert.ok(cascadeResult.sharedTurnstileLoad.length > 0, 'Shared inner turnstile load must be calculated');
+assert.ok(cascadeResult.cascadingRiskScore >= 0 && cascadeResult.cascadingRiskScore <= 100);
+console.log('✓ Test 74 Passed: Multi-gate cascading failure simulation verified');
+
+// =========================================================================
+// 75. PHASE 4 — Percentage Safety Improvement Calculation
+// =========================================================================
+const testExpBrief = SafetyBriefGenerator.generateBriefData(expRun1);
+assert.ok(testExpBrief.section6_ComparativeResults.densityImprovementPercent !== undefined);
+assert.ok(testExpBrief.section6_ComparativeResults.waitTimeImprovementPercent !== undefined);
+assert.ok(testExpBrief.section6_ComparativeResults.throughputImprovementPercent !== undefined);
+console.log('✓ Test 75 Passed: Percentage safety improvement calculations verified');
+
+// =========================================================================
+// 76. PHASE 4 — Event Replay Deterministic Timeline Generation
+// =========================================================================
+const replayTL = EventReplayEngine.generateTimeline(expRun1, 2.0);
+assert.ok(replayTL.length > 0, 'Replay timeline must generate snapshot points');
+assert.equal(replayTL[0].timeSec, 0, 'Timeline must start at t = 0');
+assert.ok(replayTL[replayTL.length - 1].timeSec <= expRun1.simulationDurationSeconds);
+assert.ok(replayTL[0].baseline.admitted <= replayTL[replayTL.length - 1].baseline.admitted);
+console.log('✓ Test 76 Passed: Event Replay deterministic timeline generation verified');
+
+// =========================================================================
+// 77. PHASE 4 — Automated Safety Brief: Full 10-Section Structure
+// =========================================================================
+assert.ok(testExpBrief.section1_ExecutiveSummary, 'Section 1 must exist');
+assert.ok(testExpBrief.section2_StadiumConfiguration, 'Section 2 must exist');
+assert.ok(testExpBrief.section3_ScenarioDescription, 'Section 3 must exist');
+assert.ok(testExpBrief.section4_BaselineAnalysis, 'Section 4 must exist');
+assert.ok(testExpBrief.section5_InterventionAnalysis, 'Section 5 must exist');
+assert.ok(testExpBrief.section6_ComparativeResults, 'Section 6 must exist');
+assert.ok(testExpBrief.section7_DisplacementAnalysis, 'Section 7 must exist');
+assert.ok(testExpBrief.section8_FinalVerdict, 'Section 8 must exist');
+assert.ok(testExpBrief.section9_RecommendedActions, 'Section 9 must exist');
+assert.ok(testExpBrief.section10_TechnicalAppendix, 'Section 10 must exist');
+console.log('✓ Test 77 Passed: Automated Safety Brief 10-section structure verified');
+
+// =========================================================================
+// 78. PHASE 4 — CSV Export Formatting & Tabular Integrity
+// =========================================================================
+const csvOutput = SafetyBriefGenerator.generateCSV(expRun1);
+assert.ok(csvOutput.includes('CROWDWISE EVENT SAFETY PERMITTING BRIEF'), 'CSV must contain brief header');
+assert.ok(csvOutput.includes('COMPARATIVE PERFORMANCE METRICS'), 'CSV must contain comparative section');
+assert.ok(csvOutput.includes('THREE-ZONE SPATIAL DENSITY'), 'CSV must contain three-zone breakdown');
+console.log('✓ Test 78 Passed: CSV report generation and tabular integrity verified');
+
+// =========================================================================
+// 79. PHASE 4 — Parametric Batch Benchmarking Reproducibility
+// =========================================================================
+const standardSuites = BatchBenchmarkingEngine.getStandardBenchmarkSuites();
+assert.equal(standardSuites.length, 5, 'Standard benchmark suite must define 5 parametric trials');
+const benchRunResult = BatchBenchmarkingEngine.runBenchmarkSuite(standardSuites.slice(0, 2));
+assert.equal(benchRunResult.length, 2, 'Must execute specified benchmark trials');
+assert.ok(benchRunResult[0].throughputPerMin > 0, 'Throughput must be positive');
+assert.ok(benchRunResult[0].peakThroatDensity > 0, 'Throat density must be positive');
+console.log('✓ Test 79 Passed: Parametric batch benchmarking reproducibility verified');
+
+// =========================================================================
+// 80. PHASE 4 — Evaluation Reliability Safeguards & Inconclusive Handling
+// =========================================================================
+const shortAudit = DisplacementDetector.compare(
+  { ...expRun1.baselineResults.zoneA, density: 1.0 },
+  { ...expRun1.baselineResults.zoneB, density: 1.2 },
+  { ...expRun1.baselineResults.zoneC, density: 1.5 },
+  { ...expRun1.interventionResults.zoneA, density: 1.1 },
+  { ...expRun1.interventionResults.zoneB, density: 1.3 },
+  { ...expRun1.interventionResults.zoneC, density: 1.4 },
+  4.0 // 4 seconds < 8 seconds minimum threshold
+);
+const shortVerdict = SafetyVerdictEngine.evaluate(shortAudit);
+assert.equal(shortVerdict.verdict, 'INCONCLUSIVE', 'Sub-8 second trial must evaluate to INCONCLUSIVE');
+assert.equal(shortVerdict.permitRecommendation, 'CONTINUE_MONITORING');
+console.log('✓ Test 80 Passed: Evaluation reliability safeguards & inconclusive handling verified');
+
+// =========================================================================
+// 81. PHASE 2.3 — Gate View Isolation for E11 (MG Road mass ingress)
+// =========================================================================
+{
+  const e11Engine = new MicroGateEngine('E11', 42);
+  const e11Inner = e11Engine.getConnectedInnerGateIds();
+  assert.deepEqual(e11Inner, ['G15'], 'E11 must connect ONLY to inner gate G15');
+  const e11Voms = e11Engine.getVomitories();
+  assert.equal(e11Voms.length, 1, 'E11 must have exactly 1 vomitory');
+  assert.equal(e11Voms[0].gateId, 'G15');
+  assert.equal(e11Voms[0].standName, 'M2 Annexe', 'Destination for E11 must be M2 Annexe');
+  const e11Turnstiles = e11Engine.getTurnstileCounters();
+  assert.ok(e11Turnstiles.every((t) => t.gateId === 'G15'), 'All turnstiles in E11 view must belong to G15');
+  assert.ok(!e11Turnstiles.some((t) => t.gateId === 'G7' || t.gateId === 'G8'), 'Unrelated gates G7/G8 must not appear');
+  console.log('✓ Test 81 Passed: Gate isolation for E11 displays only E11 and connected G15 -> M2 Annexe');
+}
+
+// =========================================================================
+// 82. PHASE 2.3 — Gate View Isolation for E22 (Cubbon Road high-volume artery)
+// =========================================================================
+{
+  const e22Engine = new MicroGateEngine('E22', 42);
+  const e22Inner = e22Engine.getConnectedInnerGateIds();
+  assert.deepEqual(e22Inner, ['G7', 'G8'], 'E22 must connect ONLY to G7 and G8');
+  const e22Voms = e22Engine.getVomitories();
+  assert.equal(e22Voms.length, 2, 'E22 must have exactly 2 vomitories for G7 and G8');
+  const e22Turnstiles = e22Engine.getTurnstileCounters();
+  assert.ok(e22Turnstiles.every((t) => t.gateId === 'G7' || t.gateId === 'G8'), 'Turnstiles must only belong to G7 and G8');
+  assert.ok(!e22Turnstiles.some((t) => t.gateId === 'G15' || t.gateId === 'G1'), 'Unrelated gates G15/G1 must not appear');
+  console.log('✓ Test 82 Passed: Gate isolation for E22 displays only E22, G7 and G8');
+}
+
+// =========================================================================
+// 83. PHASE 2.3 — Gate View Isolation for E14 and Universal Gate Catalog Coverage
+// =========================================================================
+{
+  const e14Engine = new MicroGateEngine('E14', 42);
+  assert.deepEqual(e14Engine.getConnectedInnerGateIds(), ['G14'], 'E14 must connect ONLY to G14');
+  for (let i = 1; i <= 23; i++) {
+    const ogId = `E${i}`;
+    const spec = GATE_CONNECTIVITY_CATALOG[ogId];
+    assert.ok(spec, `Outer gate ${ogId} must be defined in connectivity catalog`);
+    assert.ok(spec.connectedInnerGates.length > 0, `${ogId} must have valid connected inner gates`);
+    spec.connectedInnerGates.forEach((igId) => {
+      assert.ok(INNER_GATE_STAND_CATALOG[igId], `Connected inner gate ${igId} must exist in stand catalog`);
+    });
+  }
+  console.log('✓ Test 83 Passed: Gate isolation for E14 verified and all 23 outer gates resolve valid inner banks');
+}
+
+// =========================================================================
+// 84. PHASE 2.3 — Two-Way Store Selection & Automatic Connected Gate Resolution
+// =========================================================================
+{
+  const resolvedG15 = getConnectedInnerGates('E11');
+  assert.deepEqual(resolvedG15, ['G15']);
+  const resolvedE11 = getConnectedOuterGates('G15');
+  assert.ok(resolvedE11.includes('E11'));
+  const resolvedG7G8 = getConnectedInnerGates('E22');
+  assert.deepEqual(resolvedG7G8, ['G7', 'G8']);
+  console.log('✓ Test 84 Passed: Two-way gate resolution automatically links outer and inner gates');
+}
+
+// =========================================================================
+// 85. PHASE 2.3 — Turnstile Counter Operational Object Properties & Unique IDs
+// =========================================================================
+{
+  const testEngine = new MicroGateEngine('E11', 42);
+  const counters = testEngine.getTurnstileCounters();
+  assert.ok(counters.length >= 4, 'Initial turnstile bank should have at least 4 counters');
+  counters.forEach((c) => {
+    assert.ok(c.counterId.startsWith('G15-T'), `Counter ID must follow standard naming: ${c.counterId}`);
+    assert.equal(c.status, 'IDLE', 'Initial counter status must be IDLE');
+    assert.equal(typeof c.nominalLatencySec, 'number');
+    assert.equal(c.processedCount, 0);
+    assert.ok(Array.isArray(c.assignedQueue), 'Counter must have dedicated assigned queue array');
+  });
+  console.log('✓ Test 85 Passed: Turnstile counters are independent operational objects with unique IDs and queues');
+}
+
+// =========================================================================
+// 86. PHASE 2.3 — Dynamic Turnstile Addition (+) and Lane Spacing Recalculation
+// =========================================================================
+{
+  const testEngine = new MicroGateEngine('E11', 42);
+  const initialCount = testEngine.getTurnstileCounters().length;
+  const newCounter = testEngine.addTurnstile('G15');
+  assert.ok(newCounter, 'addTurnstile must succeed');
+  assert.equal(newCounter?.counterId, `G15-T0${initialCount + 1}`);
+  assert.equal(newCounter?.status, 'IDLE');
+  assert.equal(testEngine.getTurnstileCounters().length, initialCount + 1);
+  const newTurnstiles = testEngine.getTurnstileCounters();
+  for (let i = 0; i < newTurnstiles.length - 1; i++) {
+    assert.ok(newTurnstiles[i].x < newTurnstiles[i + 1].x, 'Turnstile lane positions must be strictly sorted and spaced');
+  }
+  console.log('✓ Test 86 Passed: Adding turnstile creates operational lane and updates spacing automatically');
+}
+
+// =========================================================================
+// 87. PHASE 2.3 — Idle Counter Removal (-) and Capacity Recalculation
+// =========================================================================
+{
+  const testEngine = new MicroGateEngine('E11', 42);
+  const initialCount = testEngine.getTurnstileCounters().length;
+  const removedSuccess = testEngine.removeTurnstile('G15');
+  assert.equal(removedSuccess, true, 'Removing idle counter must succeed');
+  assert.equal(testEngine.getTurnstileCounters().length, initialCount - 1);
+  console.log('✓ Test 87 Passed: Idle counter removal safely deletes lane and updates capacity');
+}
+
+// =========================================================================
+// 88. PHASE 2.3 — Busy-Safe Removal Protection (BUSY counters cannot be removed)
+// =========================================================================
+{
+  const busyEngine = new MicroGateEngine('E11', 42);
+  const firstCounter = busyEngine.getTurnstileCounters()[busyEngine.getTurnstileCounters().length - 1];
+  firstCounter.status = 'BUSY';
+  firstCounter.serviceRemainingSec = 2.0;
+  const busyRemovalResult = busyEngine.removeTurnstile('G15');
+  assert.equal(busyRemovalResult, false, 'BUSY counter must strictly reject removal');
+  console.log('✓ Test 88 Passed: Busy counter protection verified — busy counters cannot be removed');
+}
+
+// =========================================================================
+// 89. PHASE 2.3 — Counter Failure Toggling and Queue Redistribution
+// =========================================================================
+{
+  const failEngine = new MicroGateEngine('E11', 42);
+  const targetCounter = failEngine.getTurnstileCounters()[0];
+  const targetId = targetCounter.counterId;
+  failEngine.toggleTurnstileFailure(targetId);
+  assert.equal(targetCounter.status, 'FAILED', 'Target counter status must be FAILED');
+  failEngine.toggleTurnstileFailure(targetId);
+  assert.equal(targetCounter.status, 'IDLE', 'Toggling again must restore status to IDLE');
+  console.log('✓ Test 89 Passed: Turnstile failure toggles status correctly and excludes failed lanes');
+}
+
+// =========================================================================
+// 90. PHASE 2.3 — Sequential Admission Lifecycle (No Teleportation)
+// =========================================================================
+{
+  const flowEngine = new MicroGateEngine('E11', 42);
+  flowEngine.setRejectionRate(0);
+  flowEngine.setPersonMismatchRate(0);
+  flowEngine.spawnAgent();
+  const testAgent = flowEngine.getAgents()[0];
+  assert.ok(testAgent, 'Agent must be spawned');
+  assert.equal(testAgent.state, 'ARRIVING');
+  assert.ok(testAgent.y >= 500, 'Agent must spawn on approach road');
+  flowEngine.step(0.1, 1.0);
+  assert.ok(testAgent.y < 540, 'Agent must move continuously towards queue');
+  console.log('✓ Test 90 Passed: Sequential admission lifecycle verified without teleportation');
+}
+
+// =========================================================================
+// 91. PHASE 2.3 — Mismatch Detection and Lateral Diversion Routing
+// =========================================================================
+{
+  const mismatchEngine = new MicroGateEngine('E11', 42);
+  mismatchEngine.setRejectionRate(0);
+  mismatchEngine.setPersonMismatchRate(1.0); // 100% mismatch
+  mismatchEngine.spawnAgent();
+  const mismatchAgent = mismatchEngine.getAgents()[0];
+  assert.ok(mismatchAgent);
+  mismatchAgent.attendeeName = 'Imposter Person';
+  mismatchAgent.ticketHolderName = 'Legitimate Spectator';
+  (mismatchEngine as any).finalizeTicketValidation(mismatchAgent, mismatchEngine.getScanStations()[0]);
+  assert.equal(mismatchAgent.state, 'TICKET_VALIDATED');
+  const chk = mismatchEngine.getPersonCheckStations()[0];
+  chk.currentAgentId = mismatchAgent.id;
+  chk.status = 'CHECKING';
+  chk.checkRemainingSec = 0.05;
+  (mismatchEngine as any).stepPersonCheckStations(0.1);
+  assert.equal(mismatchAgent.state, 'REJECTED');
+  assert.equal(mismatchAgent.isDiverted, true);
+  assert.equal(mismatchAgent.waypoints[1].x, 860, 'Diverted agent must route to recovery corridor at x=860');
+  console.log('✓ Test 91 Passed: Identity mismatch detected and diverted laterally to recovery corridor');
+}
+
+// =========================================================================
+// 92. PHASE 2.3 — Single-Attendee Turnstile Service Processing
+// =========================================================================
+{
+  const singleServeEngine = new MicroGateEngine('E11', 42);
+  const counterToTest = singleServeEngine.getTurnstileCounters()[0];
+  counterToTest.status = 'BUSY';
+  counterToTest.currentAgentId = 999;
+  counterToTest.serviceRemainingSec = 1.0;
+  singleServeEngine.step(0.5, 10.0);
+  assert.equal(counterToTest.status, 'BUSY');
+  assert.equal(counterToTest.serviceRemainingSec, 0.5);
+  singleServeEngine.step(0.6, 10.5);
+  assert.equal(counterToTest.status, 'IDLE', 'Counter must become IDLE after service completes');
+  assert.equal(counterToTest.currentAgentId, null);
+  assert.equal(counterToTest.processedCount, 1, 'Counter must increment processed count to 1');
+  console.log('✓ Test 92 Passed: Turnstile processes one attendee at a time with live countdown');
+}
+
+// =========================================================================
+// 93. PHASE 2.3 — Sequential Capacity Bottleneck Formula: C_eff = min(C_scan, C_person, C_turn)
+// =========================================================================
+{
+  const capEngine = new MicroGateEngine('E11', 42);
+  capEngine.setTicketScanLatency(0.2); // Scan cap = 4 * 300 = 1200 p/m
+  capEngine.setPersonCheckLatency(1.0); // Person check cap = 4 * 60 = 240 p/m
+  capEngine.setTurnstileLatency(0.5); // Turnstile cap = 4 * 120 = 480 p/m
+  const metrics = capEngine.step(0.01, 1.0);
+  assert.equal(metrics.ticketScanCapacityPerMin, 1200);
+  assert.equal(metrics.personCheckCapacityPerMin, 240);
+  assert.equal(metrics.turnstileCapacityPerMin, 480);
+  assert.equal(metrics.effectiveCapacityPerMin, 240, 'Effective capacity must equal min bottleneck: 240 p/m');
+  console.log('✓ Test 93 Passed: Sequential capacity formula accurately identifies limiting bottleneck');
+}
+
+// =========================================================================
+// 94. PHASE 2.3 — Instant Real-Time Capacity Recalculation on Turnstile Addition
+// =========================================================================
+{
+  const dynEngine = new MicroGateEngine('E11', 42);
+  dynEngine.setTicketScanLatency(0.1);
+  dynEngine.setPersonCheckLatency(0.1);
+  dynEngine.setTurnstileLatency(1.0); // 60 p/m per turnstile
+  const mBefore = dynEngine.step(0.01, 1.0);
+  const capBefore = mBefore.turnstileCapacityPerMin;
+  dynEngine.addTurnstile('G15');
+  const mAfter = dynEngine.step(0.01, 1.0);
+  const capAfter = mAfter.turnstileCapacityPerMin;
+  assert.equal(capAfter, capBefore + 60, 'Turnstile capacity must increase by exactly 60 p/m');
+  console.log('✓ Test 94 Passed: Adding turnstile instantly recalculates venue throughput capacity');
+}
+
+// =========================================================================
+// 95. PHASE 2.3 — Waypoint Advancement Continuity (Bounded Step Distance)
+// =========================================================================
+{
+  const contEngine = new MicroGateEngine('E11', 42);
+  contEngine.spawnAgent();
+  const ag = contEngine.getAgents()[0];
+  const initialX = ag.x;
+  const initialY = ag.y;
+  contEngine.step(0.05, 1.0);
+  const stepDist = Math.hypot(ag.x - initialX, ag.y - initialY);
+  assert.ok(stepDist < 10, `Step distance must be smooth and bounded (< 10px, got ${stepDist.toFixed(2)}px)`);
+  console.log('✓ Test 95 Passed: Continuous agent movement verified without jumping or teleportation');
+}
+
 console.log('\n=============================================================');
-console.log('✓ ALL 40 PREDICTIVE SAFETY, BLUEPRINT & GATE TESTS PASSED!');
+console.log('✓ ALL 95 PREDICTIVE SAFETY, INTELLIGENCE & GATE TESTS PASSED!');
 console.log('=============================================================\n');

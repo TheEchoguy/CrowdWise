@@ -237,7 +237,7 @@ export const CHINNASWAMY_OUTER_GATES: OuterGate[] = [
   {
     id: 'E11',
     label: 'Gate E11',
-    road: 'LINK_ROAD',
+    road: 'MG_ROAD',
     section: 'SOUTH_MG',
     x: 1160,
     y: 940,
